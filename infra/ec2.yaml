@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Travelhues API on one t4g.micro with a stable public address.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Default VPC in ap-south-1.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet in that VPC. It must have a route to an internet gateway.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Resources:
+  ApiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow the Travelhues API on port 4000
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          CidrIp: 0.0.0.0/0
+          Description: API
+      Tags:
+        - Key: Name
+          Value: travelhues-api
+
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: travelhues-api
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  ApiInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: travelhues-api
+      Roles:
+        - !Ref ApiRole
+
+  ApiInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t4g.micro
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref ApiInstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref ApiSecurityGroup
+      CreditSpecification:
+        CPUCredits: standard
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -euo pipefail
+          dnf install -y tar xz git
+          curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-arm64.tar.xz -o /tmp/node.tar.xz
+          tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
+          rm -f /tmp/node.tar.xz
+          npm install -g pm2
+          dd if=/dev/zero of=/swapfile bs=1M count=2048
+          chmod 600 /swapfile
+          mkswap /swapfile
+          swapon /swapfile
+          printf '/swapfile none swap sw 0 0\n' >> /etc/fstab
+          pm2 startup systemd -u ec2-user --hp /home/ec2-user
+      Tags:
+        - Key: Name
+          Value: travelhues-api
+
+  ApiAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref ApiInstance
+      Tags:
+        - Key: Name
+          Value: travelhues-api
+
+Outputs:
+  PublicIp:
+    Description: Stable address for the API
+    Value: !Ref ApiAddress
+  ApiUrl:
+    Description: Base URL for NEXT_PUBLIC_API_URL
+    Value: !Sub http://${ApiAddress}:4000
+  InstanceId:
+    Description: Use this with Session Manager
+    Value: !Ref ApiInstance

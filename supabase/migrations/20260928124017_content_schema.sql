@@ -594,7 +594,7 @@ begin
       link_label = excluded.link_label;
   end loop;
 
-  delete from public.glimpse_likes;
+  delete from public.glimpse_likes where true;
   for like_row in
     select value
     from jsonb_array_elements(coalesce(payload -> 'glimpseLikes', '[]'::jsonb)) as value
@@ -606,7 +606,7 @@ begin
     on conflict do nothing;
   end loop;
 
-  delete from public.glimpse_comments;
+  delete from public.glimpse_comments where true;
   for note in
     select value
     from jsonb_array_elements(coalesce(payload -> 'glimpseComments', '[]'::jsonb)) as value
@@ -624,7 +624,7 @@ begin
       and exists (select 1 from public.profiles where id = (note.value ->> 'userId')::uuid);
   end loop;
 
-  delete from public.content_marks;
+  delete from public.content_marks where true;
   for mark in
     select value
     from jsonb_array_elements(coalesce(payload -> 'contentMarks', '[]'::jsonb)) as value

@@ -9,7 +9,11 @@ npm install
 npm run start:dev
 ```
 
-The API listens on port 4000.
+The API listens on port 4000, on every network interface.
+
+## Deploy
+
+The box is one `t4g.micro` in `ap-south-1`, defined in `infra/ec2.yaml`. `scripts/ec2-bootstrap.sh` installs Node 22 and PM2. `scripts/deploy.sh` builds and reloads the process. Do not commit `.env`.
 
 Copy `.env.example` to `.env` and set `ADMIN_TOKEN` plus the Supabase URL and keys before starting. Admin routes expect `Authorization: Bearer <token>`.
 
