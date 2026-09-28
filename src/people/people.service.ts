@@ -337,14 +337,29 @@ export class PeopleService {
     return `${base}/join/${token}`;
   }
 
+  async storePhoto(body: unknown) {
+    const dataUrl =
+      body && typeof body === 'object' && 'dataUrl' in body
+        ? (body as { dataUrl?: unknown }).dataUrl
+        : undefined;
+    if (typeof dataUrl !== 'string' || dataUrl === '') {
+      throw new BadRequestException('Photo is required');
+    }
+    return { url: await this.saveImage(dataUrl) };
+  }
+
   private async saveImage(dataUrl: string) {
     const matched = /^data:image\/(jpeg|png|webp);base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl);
     if (!matched) throw new BadRequestException('Photo must be a JPEG, PNG, or WebP');
+    const bytes = Buffer.from(matched[2], 'base64');
+    if (bytes.length > 2_000_000) {
+      throw new BadRequestException('Photo must be under 2 MB');
+    }
     const ext = matched[1].toLowerCase() === 'jpeg' ? 'jpg' : matched[1].toLowerCase();
     const name = `${randomBytes(8).toString('hex')}.${ext}`;
     const directory = join(process.cwd(), 'data', 'media');
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, name), Buffer.from(matched[2], 'base64'));
+    await writeFile(join(directory, name), bytes);
     return `/media/${name}`;
   }
 }

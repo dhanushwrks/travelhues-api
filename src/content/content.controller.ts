@@ -11,10 +11,38 @@ export class ContentController {
     private readonly admin: AdminService,
   ) {}
 
+  @Get('me/stories')
+  @UseGuards(UserGuard, TccGuard)
+  myStories(@Req() request: AuthedRequest) {
+    return this.admin.storiesFor(request.user);
+  }
+
   @Post('stories')
   @UseGuards(UserGuard, TccGuard)
   createStory(@Req() request: AuthedRequest, @Body() body: unknown) {
     return this.admin.createStoryForCreator(request.user, body);
+  }
+
+  @Post('stories/:slug/spots')
+  @UseGuards(UserGuard, TccGuard)
+  createSpot(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.createSpot(slug, body);
+  }
+
+  @Post('stories/:slug/itineraries')
+  @UseGuards(UserGuard, TccGuard)
+  createItinerary(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.createItinerary(slug, body);
   }
 
   @Get('settings')

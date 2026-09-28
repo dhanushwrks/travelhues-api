@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -40,6 +41,18 @@ export class AdminService {
     return this.store.getStories();
   }
 
+  storiesFor(user: { id: string; username: string }) {
+    return this.store.getStories().filter((story) => this.owns(story, user));
+  }
+
+  requireOwned(user: { id: string; username: string }, slug: string) {
+    const story = this.requireStory(slug);
+    if (!this.owns(story, user)) {
+      throw new ForbiddenException('That story belongs to another creator');
+    }
+    return story;
+  }
+
   story(slug: string) {
     return this.requireStory(slug);
   }
@@ -59,6 +72,11 @@ export class AdminService {
       },
     });
     story.ownerId = owner.id;
+    const country = story.destination.country.toUpperCase();
+    const open = this.store.getSettings().app.enabledCountries ?? [];
+    if (!open.includes(country)) {
+      throw new BadRequestException('That country is not open for stories');
+    }
     if (this.store.getStories().some((item) => item.slug === story.slug)) {
       throw new ConflictException(`Story ${story.slug} already exists`);
     }
@@ -212,6 +230,10 @@ export class AdminService {
         (item) => item.slug !== itinerarySlug,
       );
     });
+  }
+
+  private owns(story: Story, user: { id: string; username: string }) {
+    return story.ownerId === user.id || story.creator.username === user.username;
   }
 
   private requireStory(slug: string): Story {

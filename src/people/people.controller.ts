@@ -51,6 +51,13 @@ export class PeopleController {
     return this.people.redeemInvite(token, body);
   }
 
+  @Post('media')
+  @HttpCode(201)
+  @UseGuards(UserGuard)
+  upload(@Body() body: unknown) {
+    return this.people.storePhoto(body);
+  }
+
   @Get('media/:name')
   @Header('Cache-Control', 'public, max-age=86400')
   media(@Param('name') name: string) {
