@@ -14,6 +14,7 @@ import type {
   Story,
 } from '../content/content.types.js';
 import { spotTypes } from '../content/content.types.js';
+import { isCountryCode } from '../people/countries.js';
 import { StoreService } from '../store/store.service.js';
 import type { Settings } from '../store/store.types.js';
 
@@ -43,6 +44,30 @@ export class AdminService {
     return this.requireStory(slug);
   }
 
+  async createStoryForCreator(
+    owner: { id: string; username: string; displayName: string },
+    body: unknown,
+  ): Promise<Story> {
+    const story = parseStory(body, {
+      requireEmptyCollections: true,
+      creator: {
+        username: owner.username,
+        displayName: owner.displayName,
+        bio: '',
+        avatarUrl:
+          'https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=400&q=80',
+      },
+    });
+    story.ownerId = owner.id;
+    if (this.store.getStories().some((item) => item.slug === story.slug)) {
+      throw new ConflictException(`Story ${story.slug} already exists`);
+    }
+    await this.store.update((draft) => {
+      draft.stories.push(story);
+    });
+    return this.requireStory(story.slug);
+  }
+
   async createStory(body: unknown): Promise<Story> {
     const story = parseStory(body, { requireEmptyCollections: true });
     if (this.store.getStories().some((item) => item.slug === story.slug)) {
@@ -64,6 +89,7 @@ export class AdminService {
       draft.stories[index] = {
         ...next,
         slug,
+        ownerId: current.ownerId,
         spots: current.spots,
         itineraries: current.itineraries,
       };
@@ -219,6 +245,7 @@ function parseSettings(body: unknown): Settings {
       tagline: asText(app.tagline, 'Tagline'),
       publicUrl: asHttpUrl(app.publicUrl, 'Public URL'),
       mapsEnabled: asBoolean(app.mapsEnabled, 'Maps'),
+      enabledCountries: asCountryCodes(app.enabledCountries),
     },
     api: {
       corsOrigins,
@@ -229,21 +256,23 @@ function parseSettings(body: unknown): Settings {
 
 function parseStory(
   body: unknown,
-  options: { slug?: string; requireEmptyCollections?: boolean },
+  options: {
+    slug?: string;
+    requireEmptyCollections?: boolean;
+    creator?: Story['creator'];
+  },
 ): Story {
   const record = asRecord(body, 'Story');
   const slug = options.slug ?? asSlug(record.slug, 'Story slug');
   const spots = options.requireEmptyCollections ? [] : asSpotList(record.spots);
-  const itineraries = options.requireEmptyCollections
-    ? []
-    : [];
+  const itineraries = options.requireEmptyCollections ? [] : [];
   return {
     slug,
     title: asText(record.title, 'Title'),
     summary: asText(record.summary, 'Summary'),
     coverUrl: asHttpUrl(record.coverUrl, 'Cover URL'),
     destination: parseDestination(record.destination),
-    creator: parseCreator(record.creator),
+    creator: options.creator ?? parseCreator(record.creator),
     spots,
     itineraries,
   };
@@ -372,6 +401,15 @@ function asBoolean(value: unknown, label: string) {
     throw new BadRequestException(`${label} must be on or off`);
   }
   return value;
+}
+
+function asCountryCodes(value: unknown) {
+  if (value == null) return [];
+  const codes = asStringArray(value, 'Enabled countries').map((code) => code.toUpperCase());
+  if (codes.some((code) => !isCountryCode(code))) {
+    throw new BadRequestException('Choose countries from the list');
+  }
+  return [...new Set(codes)].slice(0, 80);
 }
 
 function asStringArray(value: unknown, label: string) {

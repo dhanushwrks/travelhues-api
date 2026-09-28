@@ -11,9 +11,9 @@ npm run start:dev
 
 The API listens on port 4000.
 
-Copy `.env.example` to `.env` and set `ADMIN_TOKEN` before starting. Admin routes expect `Authorization: Bearer <token>`.
+Copy `.env.example` to `.env` and set `ADMIN_TOKEN` plus the Supabase URL and keys before starting. Admin routes expect `Authorization: Bearer <token>`.
 
-Content and settings are stored in `data/store.json`. The first start seeds the Thailand story.
+Content and settings live in Supabase. Apply `supabase/migrations/20260928124017_content_schema.sql` in the SQL editor before the first start. The first start seeds the Thailand story. A `STORE_PATH` override keeps tests on a local JSON file.
 
 ## Routes
 

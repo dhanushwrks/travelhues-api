@@ -3,6 +3,7 @@ export type AppSettings = {
   tagline: string;
   publicUrl: string;
   mapsEnabled: boolean;
+  enabledCountries: string[];
 };
 
 export type ApiSettings = {

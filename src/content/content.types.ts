@@ -67,6 +67,7 @@ export type Story = {
   title: string;
   summary: string;
   coverUrl: string;
+  ownerId?: string;
   destination: Destination;
   creator: Creator;
   spots: Spot[];
