@@ -75,9 +75,10 @@ Resources:
           #!/bin/bash
           set -euo pipefail
           dnf install -y tar xz git
-          curl -fsSL https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-arm64.tar.xz -o /tmp/node.tar.xz
+          curl -fsSL https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-arm64.tar.xz -o /tmp/node.tar.xz
           tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
           rm -f /tmp/node.tar.xz
+          npm install -g npm@11.16.0
           npm install -g pm2
           dd if=/dev/zero of=/swapfile bs=1M count=2048
           chmod 600 /swapfile

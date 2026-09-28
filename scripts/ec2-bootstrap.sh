@@ -7,7 +7,7 @@ if [[ "$(uname -m)" != "aarch64" ]]; then
   exit 1
 fi
 
-NODE_VERSION=22.19.0
+NODE_VERSION=22.23.3
 
 dnf install -y tar xz git
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -v)" != "v${NODE_VERSION}" ]]; then
@@ -16,6 +16,7 @@ if ! command -v node >/dev/null 2>&1 || [[ "$(node -v)" != "v${NODE_VERSION}" ]]
   rm -f /tmp/node.tar.xz
 fi
 
+npm install -g npm@11.16.0
 npm install -g pm2
 
 if [[ ! -f /swapfile ]]; then
