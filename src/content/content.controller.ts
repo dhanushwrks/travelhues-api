@@ -12,19 +12,19 @@ export class ContentController {
   ) {}
 
   @Get('me/stories')
-  @UseGuards(UserGuard, TccGuard)
+  @UseGuards(UserGuard)
   myStories(@Req() request: AuthedRequest) {
     return this.admin.storiesFor(request.user);
   }
 
   @Post('stories')
-  @UseGuards(UserGuard, TccGuard)
+  @UseGuards(UserGuard)
   createStory(@Req() request: AuthedRequest, @Body() body: unknown) {
     return this.admin.createStoryForCreator(request.user, body);
   }
 
   @Post('stories/:slug/spots')
-  @UseGuards(UserGuard, TccGuard)
+  @UseGuards(UserGuard)
   createSpot(
     @Req() request: AuthedRequest,
     @Param('slug') slug: string,
@@ -46,7 +46,7 @@ export class ContentController {
   }
 
   @Post('stories/:slug/itineraries')
-  @UseGuards(UserGuard, TccGuard)
+  @UseGuards(UserGuard)
   createItinerary(
     @Req() request: AuthedRequest,
     @Param('slug') slug: string,
@@ -57,7 +57,7 @@ export class ContentController {
   }
 
   @Put('stories/:slug/itineraries/:itinerarySlug')
-  @UseGuards(UserGuard, TccGuard)
+  @UseGuards(UserGuard)
   updateItinerary(
     @Req() request: AuthedRequest,
     @Param('slug') slug: string,
@@ -69,7 +69,7 @@ export class ContentController {
   }
 
   @Post('stories/:slug/spots/:spotId/archive')
-  @UseGuards(UserGuard, TccGuard)
+  @UseGuards(UserGuard)
   archiveSpot(
     @Req() request: AuthedRequest,
     @Param('slug') slug: string,
@@ -93,7 +93,7 @@ export class ContentController {
   }
 
   @Post('stories/:slug/itineraries/:itinerarySlug/archive')
-  @UseGuards(UserGuard, TccGuard)
+  @UseGuards(UserGuard)
   archiveItinerary(
     @Req() request: AuthedRequest,
     @Param('slug') slug: string,

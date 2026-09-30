@@ -23,6 +23,27 @@ export function storyIsPublic(
   return true;
 }
 
+export function personalAccounts(
+  profiles: { id: string; username: string; role?: string }[],
+) {
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  for (const profile of profiles) {
+    if (profile.role !== 'traveler') continue;
+    ids.add(profile.id);
+    if (profile.username) names.add(profile.username);
+  }
+  return { ids, names };
+}
+
+export function isPersonalTrip(
+  story: Story,
+  personal: { ids: Set<string>; names: Set<string> },
+) {
+  if (story.ownerId && personal.ids.has(story.ownerId)) return true;
+  return personal.names.has(story.creator.username);
+}
+
 export function publicStory(story: Story): Story {
   const spots = story.spots.filter((spot) => !spot.archived && !spot.deletedAt);
   const live = new Set(spots.map((spot) => spot.id));

@@ -66,7 +66,7 @@ export class AdminService {
     const story = this.requireStory(slug);
     if (story.deletedAt) throw new NotFoundException('That story was not found');
     if (!this.owns(story, user)) {
-      throw new ForbiddenException('That story belongs to another creator');
+      throw new ForbiddenException('That story belongs to someone else');
     }
     return story;
   }
