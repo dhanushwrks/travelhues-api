@@ -168,6 +168,7 @@ export class AdminService {
       title: asText(record.title, 'Title'),
       body: asText(record.body, 'Body'),
       coverUrl: optionalCover(record.coverUrl),
+      archived: false,
     };
     if ((story.blogs ?? []).some((item) => item.slug === blog.slug)) {
       throw new ConflictException(`Blog ${blog.slug} already exists`);
@@ -189,7 +190,11 @@ export class AdminService {
     if (!story.spots.some((item) => item.id === spotId)) {
       throw new NotFoundException(`Spot ${spotId} was not found`);
     }
-    const spot = parseSpot(body, spotId, this.store.getCatalog());
+    const previous = story.spots.find((item) => item.id === spotId);
+    const spot = {
+      ...parseSpot(body, spotId, this.store.getCatalog()),
+      archived: previous?.archived ?? false,
+    };
     await this.store.update((draft) => {
       const current = draft.stories.find((item) => item.slug === storySlug);
       if (!current) return;
@@ -251,7 +256,11 @@ export class AdminService {
     if (!story.itineraries.some((item) => item.slug === itinerarySlug)) {
       throw new NotFoundException(`Itinerary ${itinerarySlug} was not found`);
     }
-    const itinerary = parseItinerary(body, story.spots, itinerarySlug);
+    const previous = story.itineraries.find((item) => item.slug === itinerarySlug);
+    const itinerary = {
+      ...parseItinerary(body, story.spots, itinerarySlug),
+      archived: previous?.archived ?? false,
+    };
     await this.store.update((draft) => {
       const current = draft.stories.find((item) => item.slug === storySlug);
       if (!current) return;
@@ -274,6 +283,48 @@ export class AdminService {
         (item) => item.slug !== itinerarySlug,
       );
     });
+  }
+
+  async setSpotArchived(storySlug: string, spotId: string, archived: boolean) {
+    this.requirePiece(storySlug, (story) => story.spots.some((item) => item.id === spotId), `Spot ${spotId} was not found`);
+    await this.store.update((draft) => {
+      const spot = draft.stories.find((item) => item.slug === storySlug)?.spots.find((item) => item.id === spotId);
+      if (spot) spot.archived = archived;
+    });
+    return { archived };
+  }
+
+  async setBlogArchived(storySlug: string, blogSlug: string, archived: boolean) {
+    this.requirePiece(
+      storySlug,
+      (story) => (story.blogs ?? []).some((item) => item.slug === blogSlug),
+      `Blog ${blogSlug} was not found`,
+    );
+    await this.store.update((draft) => {
+      const blog = draft.stories.find((item) => item.slug === storySlug)?.blogs?.find((item) => item.slug === blogSlug);
+      if (blog) blog.archived = archived;
+    });
+    return { archived };
+  }
+
+  async setItineraryArchived(storySlug: string, itinerarySlug: string, archived: boolean) {
+    this.requirePiece(
+      storySlug,
+      (story) => story.itineraries.some((item) => item.slug === itinerarySlug),
+      `Itinerary ${itinerarySlug} was not found`,
+    );
+    await this.store.update((draft) => {
+      const itinerary = draft.stories
+        .find((item) => item.slug === storySlug)
+        ?.itineraries.find((item) => item.slug === itinerarySlug);
+      if (itinerary) itinerary.archived = archived;
+    });
+    return { archived };
+  }
+
+  private requirePiece(storySlug: string, present: (story: Story) => boolean, missing: string) {
+    const story = this.requireStory(storySlug);
+    if (!present(story)) throw new NotFoundException(missing);
   }
 
   private owns(story: Story, user: { id: string; username: string }) {
@@ -400,6 +451,7 @@ function parseSpot(body: unknown, id: string | undefined, catalog: SpotCatalogIt
     avgMinutes: asNonNegative(record.avgMinutes, 'Time'),
     avgCostThb: asNonNegative(record.avgCostThb, 'Cost'),
     tags,
+    archived: false,
   };
 }
 
@@ -451,6 +503,7 @@ function parseItinerary(
     summary: asText(record.summary, 'Summary'),
     coverUrl: asHttpUrl(record.coverUrl, 'Cover URL'),
     days: days.map((day, index) => parseDay(day, index, spotIds)),
+    archived: false,
   };
 }
 

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { StoreService } from '../store/store.service.js';
 import type { PublicSettings } from '../store/store.types.js';
 import type { CreatorProfile, ItineraryDetail, Story } from './content.types.js';
+import { publicStory } from './public-story.js';
 
 @Injectable()
 export class ContentService {
@@ -16,8 +17,7 @@ export class ContentService {
   }
 
   getStories(): Story[] {
-    if (!this.store.getSettings().api.contentPublished) return [];
-    return this.store.getStories();
+    return this.publishedStories();
   }
 
   getStory(slug: string): Story {
@@ -54,6 +54,6 @@ export class ContentService {
 
   private publishedStories() {
     if (!this.store.getSettings().api.contentPublished) return [];
-    return this.store.getStories();
+    return this.store.getStories().map(publicStory);
   }
 }

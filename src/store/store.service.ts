@@ -289,10 +289,10 @@ export class StoreService implements OnModuleInit {
       slug, owner_id, title, summary, cover_url,
       destination_name, destination_country, destination_lat, destination_lng,
       creator_username, creator_display_name, creator_bio, creator_avatar_url,
-      spots (id, type, title, description, images, lat, lng, address, avg_minutes, avg_cost_thb, tags, position),
-      story_blogs (slug, title, body, cover_url, position),
+      spots (id, type, title, description, images, lat, lng, address, avg_minutes, avg_cost_thb, tags, archived, position),
+      story_blogs (slug, title, body, cover_url, archived, position),
       itineraries (
-        slug, title, summary, cover_url, position,
+        slug, title, summary, cover_url, archived, position,
         itinerary_days (
           position, title,
           itinerary_blocks (position, kind, body, spot_id)
@@ -441,6 +441,7 @@ type ItineraryRow = {
   title: string;
   summary: string;
   cover_url: string;
+  archived?: boolean | null;
   position: number;
   itinerary_days: DayRow[] | null;
 };
@@ -457,6 +458,7 @@ type SpotRow = {
   avg_minutes: number;
   avg_cost_thb: number;
   tags: string[] | null;
+  archived?: boolean | null;
   position: number;
 };
 
@@ -484,6 +486,7 @@ type BlogRow = {
   title: string;
   body: string;
   cover_url?: string | null;
+  archived?: boolean | null;
   position: number;
 };
 
@@ -553,6 +556,7 @@ function mapStory(row: StoryRow): Story {
       title: blog.title,
       body: blog.body,
       coverUrl: blog.cover_url ?? '',
+      archived: blog.archived ?? false,
     })),
   };
 }
@@ -570,6 +574,7 @@ function mapSpot(row: SpotRow): Spot {
     avgMinutes: row.avg_minutes,
     avgCostThb: row.avg_cost_thb,
     tags: row.tags ?? [],
+    archived: row.archived ?? false,
   };
 }
 
@@ -579,6 +584,7 @@ function mapItinerary(row: ItineraryRow): Itinerary {
     title: row.title,
     summary: row.summary,
     coverUrl: row.cover_url,
+    archived: row.archived ?? false,
     days: byPosition(row.itinerary_days ?? []).map((day) => ({
       title: day.title,
       blocks: byPosition(day.itinerary_blocks ?? []).map(mapBlock),

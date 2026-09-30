@@ -12,6 +12,7 @@ export type Spot = {
   avgMinutes: number;
   avgCostThb: number;
   tags: string[];
+  archived?: boolean;
 };
 
 export type NoteBlock = {
@@ -38,6 +39,7 @@ export type Itinerary = {
   summary: string;
   coverUrl: string;
   days: Day[];
+  archived?: boolean;
 };
 
 export type Creator = {
@@ -59,6 +61,7 @@ export type StoryBlog = {
   title: string;
   body: string;
   coverUrl: string;
+  archived?: boolean;
 };
 
 export type Story = {

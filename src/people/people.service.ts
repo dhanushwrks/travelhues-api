@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.user.js';
 import { AuthService } from '../auth/auth.service.js';
+import { publicStory } from '../content/public-story.js';
 import { StoreService } from '../store/store.service.js';
 import {
   parseInviteAccount,
@@ -286,8 +287,9 @@ export class PeopleService {
 
   private present(profile: Profile, includePrivate: boolean) {
     const stories = this.storiesFor(profile.username, profile.id);
-    const spots = stories.reduce((total, story) => total + story.spots.length, 0);
-    const itineraries = stories.reduce((total, story) => total + story.itineraries.length, 0);
+    const visible = stories.map((story) => publicStory(story));
+    const spots = visible.reduce((total, story) => total + story.spots.length, 0);
+    const itineraries = visible.reduce((total, story) => total + story.itineraries.length, 0);
     return {
       id: includePrivate ? profile.id : undefined,
       email: includePrivate ? profile.email : undefined,
@@ -309,7 +311,7 @@ export class PeopleService {
         spots,
         itineraries,
       },
-      stories,
+      stories: visible,
     };
   }
 

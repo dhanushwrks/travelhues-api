@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { AdminService } from '../admin/admin.service.js';
 import { TccGuard } from '../auth/tcc.guard.js';
 import { UserGuard, type AuthedRequest } from '../auth/user.guard.js';
@@ -56,6 +56,54 @@ export class ContentController {
     return this.admin.createItinerary(slug, body);
   }
 
+  @Put('stories/:slug/itineraries/:itinerarySlug')
+  @UseGuards(UserGuard, TccGuard)
+  updateItinerary(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Param('itinerarySlug') itinerarySlug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.updateItinerary(slug, itinerarySlug, body);
+  }
+
+  @Post('stories/:slug/spots/:spotId/archive')
+  @UseGuards(UserGuard, TccGuard)
+  archiveSpot(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Param('spotId') spotId: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.setSpotArchived(slug, spotId, archivedFlag(body));
+  }
+
+  @Post('stories/:slug/blogs/:blogSlug/archive')
+  @UseGuards(UserGuard, TccGuard)
+  archiveBlog(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Param('blogSlug') blogSlug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.setBlogArchived(slug, blogSlug, archivedFlag(body));
+  }
+
+  @Post('stories/:slug/itineraries/:itinerarySlug/archive')
+  @UseGuards(UserGuard, TccGuard)
+  archiveItinerary(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Param('itinerarySlug') itinerarySlug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.setItineraryArchived(slug, itinerarySlug, archivedFlag(body));
+  }
+
   @Get('settings')
   getPublicSettings() {
     return this.content.getPublicSettings();
@@ -92,4 +140,9 @@ export class ContentController {
   getCreator(@Param('username') username: string) {
     return this.content.getCreator(username);
   }
+}
+
+function archivedFlag(body: unknown) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return true;
+  return (body as { archived?: unknown }).archived !== false;
 }
