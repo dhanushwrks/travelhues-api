@@ -263,6 +263,16 @@ export class PeopleService {
         throw new BadRequestException('Only a creator can set an introduction video');
       }
       if (profile.role === 'tcc') requireCreatorBasics(profile);
+      for (const story of draft.stories) {
+        const owned = story.ownerId === profile.id || story.creator.username === profile.username;
+        if (!owned) continue;
+        story.creator = {
+          username: profile.username,
+          displayName: profile.displayName,
+          bio: profile.bio,
+          avatarUrl: profile.avatarUrl,
+        };
+      }
       next = structuredClone(profile);
     });
     if (!next) throw new NotFoundException('Profile was not found');

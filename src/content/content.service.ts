@@ -90,9 +90,33 @@ export class ContentService {
     const profiles = this.store.getProfiles();
     const quiet = quietAccounts(profiles);
     const personal = personalAccounts(profiles);
+    const byUsername = new Map(
+      profiles
+        .filter((profile) => profile.username)
+        .map((profile) => [profile.username, profile] as const),
+    );
+    const byOwner = new Map(
+      profiles.filter((profile) => profile.id).map((profile) => [profile.id, profile] as const),
+    );
     return this.store
       .getStories()
       .filter((story) => storyIsPublic(story, quiet) && !isPersonalTrip(story, personal))
-      .map(publicStory);
+      .map((story) =>
+        publicStory(withLiveCreator(story, byOwner.get(story.ownerId ?? '') ?? byUsername.get(story.creator.username))),
+      );
   }
+}
+
+function withLiveCreator(story: Story, profile: { username: string; displayName: string; bio: string; avatarUrl: string } | undefined): Story {
+  if (!profile) return story;
+  return {
+    ...story,
+    creator: {
+      username: profile.username || story.creator.username,
+      displayName: profile.displayName || story.creator.displayName,
+      bio: profile.bio || story.creator.bio,
+      // Prefer the live profile photo so denormalized Unsplash seed avatars do not stick.
+      avatarUrl: profile.avatarUrl,
+    },
+  };
 }
