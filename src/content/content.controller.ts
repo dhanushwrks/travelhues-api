@@ -23,6 +23,17 @@ export class ContentController {
     return this.admin.createStoryForCreator(request.user, body);
   }
 
+  @Put('stories/:slug')
+  @UseGuards(UserGuard)
+  updateStory(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.updateStory(slug, body);
+  }
+
   @Post('stories/:slug/spots')
   @UseGuards(UserGuard)
   createSpot(

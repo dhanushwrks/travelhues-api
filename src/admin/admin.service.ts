@@ -137,19 +137,32 @@ export class AdminService {
   }
 
   async updateStory(slug: string, body: unknown): Promise<Story> {
-    this.requireStory(slug);
-    const next = parseStory(body, { slug, catalog: this.store.getCatalog() });
+    const current = this.requireStory(slug);
+    const next = parseStory(body, {
+      slug,
+      catalog: this.store.getCatalog(),
+      creator: current.creator,
+    });
+    const country = next.destination.country.toUpperCase();
+    const open = this.store.getSettings().app.enabledCountries ?? [];
+    if (!open.includes(country)) {
+      throw new BadRequestException('That country is not open for stories');
+    }
     await this.store.update((draft) => {
       const index = draft.stories.findIndex((item) => item.slug === slug);
-      const current = draft.stories[index];
-      if (!current) return;
+      const existing = draft.stories[index];
+      if (!existing) return;
       draft.stories[index] = {
         ...next,
         slug,
-        ownerId: current.ownerId,
-        spots: current.spots,
-        itineraries: current.itineraries,
-        blogs: current.blogs ?? [],
+        ownerId: existing.ownerId,
+        destination: {
+          ...next.destination,
+          country,
+        },
+        spots: existing.spots,
+        itineraries: existing.itineraries,
+        blogs: existing.blogs ?? [],
       };
     });
     return this.requireStory(slug);
