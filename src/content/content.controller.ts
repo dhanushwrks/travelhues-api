@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { AdminService } from '../admin/admin.service.js';
 import { TccGuard } from '../auth/tcc.guard.js';
 import { UserGuard, type AuthedRequest } from '../auth/user.guard.js';
@@ -43,6 +43,18 @@ export class ContentController {
   ) {
     this.admin.requireOwned(request.user, slug);
     return this.admin.createBlog(slug, body);
+  }
+
+  @Put('stories/:slug/blogs/:blogSlug')
+  @UseGuards(UserGuard, TccGuard)
+  updateBlog(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Param('blogSlug') blogSlug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.updateBlog(slug, blogSlug, body);
   }
 
   @Post('stories/:slug/itineraries')
@@ -112,6 +124,20 @@ export class ContentController {
   @Get('spot-catalog')
   spotCatalog() {
     return this.admin.catalog();
+  }
+
+  @Get('search')
+  @UseGuards(UserGuard)
+  search(
+    @Query('q') q = '',
+    @Query('kind') kind = '',
+    @Query('country') country = '',
+    @Query('spot') spot = '',
+    @Query('sort') sort = '',
+    @Query('page') page = '',
+    @Query('limit') limit = '',
+  ) {
+    return this.content.search({ q, kind, country, spot, sort, page, limit });
   }
 
   @Get('stories')

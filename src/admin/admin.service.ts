@@ -30,7 +30,20 @@ export class AdminService {
   }
 
   async saveSettings(body: unknown): Promise<Settings> {
-    const settings = parseSettings(body);
+    const current = this.store.getSettings().app;
+    const record = asRecord(body, 'Settings');
+    const app = asRecord(record.app, 'App settings');
+    const settings = parseSettings({
+      ...record,
+      app: {
+        instagramUrl: current.instagramUrl,
+        linkedinUrl: current.linkedinUrl,
+        youtubeUrl: current.youtubeUrl,
+        termsUrl: current.termsUrl,
+        policiesUrl: current.policiesUrl,
+        ...app,
+      },
+    });
     await this.store.update((draft) => {
       draft.settings = settings;
     });
@@ -180,6 +193,26 @@ export class AdminService {
       const current = draft.stories.find((item) => item.slug === storySlug);
       if (!current) return;
       current.blogs = [...(current.blogs ?? []), blog];
+    });
+    return blog;
+  }
+
+  async updateBlog(storySlug: string, blogSlug: string, body: unknown): Promise<StoryBlog> {
+    const story = this.requireStory(storySlug);
+    const previous = (story.blogs ?? []).find((item) => item.slug === blogSlug);
+    if (!previous) throw new NotFoundException(`Blog ${blogSlug} was not found`);
+    const record = asRecord(body, 'Blog');
+    const blog: StoryBlog = {
+      ...previous,
+      slug: blogSlug,
+      title: asText(record.title, 'Title'),
+      body: asText(record.body, 'Body'),
+      coverUrl: optionalCover(record.coverUrl),
+    };
+    await this.store.update((draft) => {
+      const current = draft.stories.find((item) => item.slug === storySlug);
+      if (!current) return;
+      current.blogs = (current.blogs ?? []).map((item) => (item.slug === blogSlug ? blog : item));
     });
     return blog;
   }
@@ -366,6 +399,11 @@ function parseSettings(body: unknown): Settings {
       publicUrl: asHttpUrl(app.publicUrl, 'Public URL'),
       mapsEnabled: asBoolean(app.mapsEnabled, 'Maps'),
       enabledCountries: asCountryCodes(app.enabledCountries),
+      instagramUrl: optionalHttpUrl(app.instagramUrl, 'Instagram'),
+      linkedinUrl: optionalHttpUrl(app.linkedinUrl, 'LinkedIn'),
+      youtubeUrl: optionalHttpUrl(app.youtubeUrl, 'YouTube'),
+      termsUrl: optionalHttpUrl(app.termsUrl, 'Terms'),
+      policiesUrl: optionalHttpUrl(app.policiesUrl, 'Policies'),
     },
     api: {
       corsOrigins,
@@ -585,6 +623,11 @@ function asStringArray(value: unknown, label: string) {
 function optionalCover(value: unknown) {
   if (typeof value !== 'string' || value.trim() === '') return '';
   return asHttpUrl(value, 'Cover URL');
+}
+
+function optionalHttpUrl(value: unknown, label: string) {
+  if (typeof value !== 'string' || value.trim() === '') return '';
+  return asHttpUrl(value, label);
 }
 
 function asHttpUrl(value: unknown, label: string) {

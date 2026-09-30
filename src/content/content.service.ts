@@ -3,6 +3,7 @@ import { StoreService } from '../store/store.service.js';
 import type { PublicSettings } from '../store/store.types.js';
 import type { CreatorProfile, ItineraryDetail, Story } from './content.types.js';
 import { isPersonalTrip, personalAccounts, publicStory, quietAccounts, storyIsPublic } from './public-story.js';
+import { searchCatalog, type SearchPage } from './search.js';
 
 @Injectable()
 export class ContentService {
@@ -50,6 +51,24 @@ export class ContentService {
       throw new NotFoundException(`Creator ${username} was not found`);
     }
     return { creator: story.creator, stories: owned };
+  }
+
+  search(query: {
+    q?: string;
+    kind?: string;
+    country?: string;
+    spot?: string;
+    sort?: string;
+    page?: string;
+    limit?: string;
+  }): SearchPage {
+    const settings = this.store.getSettings();
+    return searchCatalog(
+      query,
+      this.publishedStories(),
+      this.store.getProfiles(),
+      settings.app.enabledCountries ?? [],
+    );
   }
 
   private publishedStories() {

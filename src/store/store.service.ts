@@ -21,6 +21,14 @@ type StoreFile = {
   contentMarks: ContentMark[];
 };
 
+export const brandLinkDefaults = {
+  instagramUrl: 'https://www.instagram.com/travelhues',
+  linkedinUrl: 'https://www.linkedin.com/company/travelhues',
+  youtubeUrl: 'https://www.youtube.com/@travelhues',
+  termsUrl: 'https://travelhues.com/terms',
+  policiesUrl: 'https://travelhues.com/policies',
+};
+
 export function defaultSettings(): Settings {
   return {
     app: {
@@ -29,6 +37,7 @@ export function defaultSettings(): Settings {
       publicUrl: 'http://localhost:3001',
       mapsEnabled: true,
       enabledCountries: ['TH'],
+      ...brandLinkDefaults,
     },
     api: {
       corsOrigins: [
@@ -401,6 +410,25 @@ export class StoreService implements OnModuleInit {
     if (!this.supabase) throw new Error('Supabase is not configured');
     const result = await this.supabase.rpc('save_content', { payload: this.data });
     if (result.error) throw new Error(result.error.message);
+    await this.persistBrandLinks();
+  }
+
+  private async persistBrandLinks() {
+    if (!this.supabase) return;
+    const app = this.data.settings.app;
+    const result = await this.supabase
+      .from('app_settings')
+      .update({
+        instagram_url: app.instagramUrl,
+        linkedin_url: app.linkedinUrl,
+        youtube_url: app.youtubeUrl,
+        terms_url: app.termsUrl,
+        policies_url: app.policiesUrl,
+      })
+      .eq('id', 1);
+    if (result.error && !isMissingSchema(result.error.message)) {
+      throw new Error(result.error.message);
+    }
   }
 
   private async persistFile() {
@@ -420,6 +448,11 @@ type SettingsRow = {
   enabled_countries: string[] | null;
   cors_origins: string[] | null;
   content_published: boolean;
+  instagram_url?: string | null;
+  linkedin_url?: string | null;
+  youtube_url?: string | null;
+  terms_url?: string | null;
+  policies_url?: string | null;
 };
 
 type BlockRow = {
@@ -513,8 +546,18 @@ function normalizeSettings(settings: Settings): Settings {
     app: {
       ...settings.app,
       enabledCountries: settings.app.enabledCountries ?? ['TH'],
+      instagramUrl: brandUrl(settings.app.instagramUrl, brandLinkDefaults.instagramUrl),
+      linkedinUrl: brandUrl(settings.app.linkedinUrl, brandLinkDefaults.linkedinUrl),
+      youtubeUrl: brandUrl(settings.app.youtubeUrl, brandLinkDefaults.youtubeUrl),
+      termsUrl: brandUrl(settings.app.termsUrl, brandLinkDefaults.termsUrl),
+      policiesUrl: brandUrl(settings.app.policiesUrl, brandLinkDefaults.policiesUrl),
     },
   };
+}
+
+function brandUrl(value: string | null | undefined, fallback: string) {
+  if (value == null) return fallback;
+  return value.trim();
 }
 
 function mapSettings(row: SettingsRow): Settings {
@@ -525,6 +568,11 @@ function mapSettings(row: SettingsRow): Settings {
       publicUrl: row.public_url,
       mapsEnabled: row.maps_enabled,
       enabledCountries: row.enabled_countries ?? ['TH'],
+      instagramUrl: brandUrl(row.instagram_url, brandLinkDefaults.instagramUrl),
+      linkedinUrl: brandUrl(row.linkedin_url, brandLinkDefaults.linkedinUrl),
+      youtubeUrl: brandUrl(row.youtube_url, brandLinkDefaults.youtubeUrl),
+      termsUrl: brandUrl(row.terms_url, brandLinkDefaults.termsUrl),
+      policiesUrl: brandUrl(row.policies_url, brandLinkDefaults.policiesUrl),
     },
     api: {
       corsOrigins: row.cors_origins ?? [],

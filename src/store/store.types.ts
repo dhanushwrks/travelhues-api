@@ -4,6 +4,11 @@ export type AppSettings = {
   publicUrl: string;
   mapsEnabled: boolean;
   enabledCountries: string[];
+  instagramUrl: string;
+  linkedinUrl: string;
+  youtubeUrl: string;
+  termsUrl: string;
+  policiesUrl: string;
 };
 
 export type ApiSettings = {
