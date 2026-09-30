@@ -68,7 +68,21 @@ export class ContentService {
       this.publishedStories(),
       this.store.getProfiles(),
       settings.app.enabledCountries ?? [],
+      this.likeCounts(),
     );
+  }
+
+  private likeCounts() {
+    const totals = new Map<string, number>();
+    for (const mark of this.store.getMarks()) {
+      if (mark.action !== 'like') continue;
+      const key =
+        mark.kind === 'spot'
+          ? `spot:${mark.storySlug}:${mark.spotId}`
+          : `itinerary:${mark.storySlug}:${mark.itinerarySlug}`;
+      totals.set(key, (totals.get(key) ?? 0) + 1);
+    }
+    return [...totals.entries()].map(([key, likes]) => ({ key, likes }));
   }
 
   private publishedStories() {

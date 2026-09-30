@@ -2,8 +2,8 @@ import type { Profile } from '../people/people.types.js';
 import { listCountries } from '../people/countries.js';
 import type { Story } from './content.types.js';
 
-export type SearchKind = 'all' | 'country' | 'story' | 'place' | 'creator';
-export type SearchSort = 'relevance' | 'name' | 'popular';
+export type SearchKind = 'all' | 'country' | 'story' | 'place' | 'creator' | 'itinerary';
+export type SearchSort = 'relevance' | 'name' | 'popular' | 'recent';
 
 export type SearchHit = {
   kind: Exclude<SearchKind, 'all'>;
@@ -15,6 +15,7 @@ export type SearchHit = {
   code: string;
   storySlug: string;
   spotId: string;
+  itinerarySlug: string;
   username: string;
   creatorName: string;
 };
@@ -27,10 +28,10 @@ export type SearchPage = {
   items: SearchHit[];
 };
 
-type Ranked = SearchHit & { score: number; popular: number };
+type Ranked = SearchHit & { score: number; popular: number; recent: number };
 
-const kinds = new Set<SearchKind>(['all', 'country', 'story', 'place', 'creator']);
-const sorts = new Set<SearchSort>(['relevance', 'name', 'popular']);
+const kinds = new Set<SearchKind>(['all', 'country', 'story', 'place', 'creator', 'itinerary']);
+const sorts = new Set<SearchSort>(['relevance', 'name', 'popular', 'recent']);
 
 export function searchCatalog(
   input: {
@@ -45,42 +46,36 @@ export function searchCatalog(
   stories: Story[],
   profiles: Profile[],
   enabledCountries: string[],
+  likeCounts: { key: string; likes: number }[] = [],
 ): SearchPage {
   const needle = (input.q ?? '').trim().toLowerCase();
   const kind = kinds.has(input.kind as SearchKind) ? (input.kind as SearchKind) : 'all';
   const sort = sorts.has(input.sort as SearchSort) ? (input.sort as SearchSort) : 'relevance';
   const country = (input.country ?? '').trim().toUpperCase();
-  const spot = (input.spot ?? '').trim().toLowerCase();
+  const spotTypes = new Set(
+    (input.spot ?? '')
+      .toLowerCase()
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .flatMap((item) => (item === 'experience' || item === 'experiences' ? ['activity', 'sightseeing'] : [item])),
+  );
   const page = Math.max(1, Number.parseInt(input.page ?? '1', 10) || 1);
   const limit = Math.min(24, Math.max(1, Number.parseInt(input.limit ?? '8', 10) || 8));
-  const open = new Set(enabledCountries.map((code) => code.toUpperCase()));
   const names = new Map(listCountries().map((item) => [item.code, item]));
+  const likes = new Map(likeCounts.map((item) => [item.key, item.likes]));
+  const storyOrder = new Map(stories.map((story, index) => [story.slug, index]));
+  const storyLikes = new Map(
+    stories.map((story) => {
+      let total = 0;
+      for (const [key, count] of likes) {
+        if (key.startsWith(`spot:${story.slug}:`) || key.startsWith(`itinerary:${story.slug}:`)) total += count;
+      }
+      return [story.slug, total] as const;
+    }),
+  );
 
   const hits: Ranked[] = [];
-  if (kind === 'all' || kind === 'country') {
-    for (const code of open) {
-      const item = names.get(code);
-      if (!item) continue;
-      if (country && item.code !== country) continue;
-      const score = rank(needle, [item.name, item.code]);
-      if (needle && score === 0) continue;
-      hits.push({
-        kind: 'country',
-        title: item.name,
-        subtitle: 'Country',
-        imageUrl: '',
-        country: item.code,
-        spotType: '',
-        code: item.code,
-        storySlug: '',
-        spotId: '',
-        username: '',
-        creatorName: '',
-        score,
-        popular: 0,
-      });
-    }
-  }
 
   const storyCount = new Map<string, number>();
   for (const story of stories) {
@@ -112,8 +107,10 @@ export function searchCatalog(
         spotId: '',
         username: story.creator.username,
         creatorName: story.creator.displayName,
+        itinerarySlug: '',
         score,
-        popular: story.spots.length + story.itineraries.length,
+        popular: storyLikes.get(story.slug) ?? 0,
+        recent: storyOrder.get(story.slug) ?? 0,
       });
     }
   }
@@ -122,10 +119,11 @@ export function searchCatalog(
     for (const story of stories) {
       const code = asCode(story.destination.country, names);
       if (!matchesCountry(story.destination.country, country, names)) continue;
-      for (const place of story.spots) {
-        if (spot && place.type !== spot) continue;
+      story.spots.forEach((place, index) => {
+        if (place.deletedAt) return;
+        if (spotTypes.size > 0 && !spotTypes.has(place.type)) return;
         const score = rank(needle, [place.title, place.address, place.description, ...place.tags, story.title]);
-        if (needle && score === 0) continue;
+        if (needle && score === 0) return;
         hits.push({
           kind: 'place',
           title: place.title,
@@ -136,12 +134,43 @@ export function searchCatalog(
           code: '',
           storySlug: story.slug,
           spotId: place.id,
+          itinerarySlug: '',
           username: story.creator.username,
           creatorName: story.creator.displayName,
           score,
-          popular: 0,
+          popular: likes.get(`spot:${story.slug}:${place.id}`) ?? 0,
+          recent: (storyOrder.get(story.slug) ?? 0) * 1000 + index,
         });
-      }
+      });
+    }
+  }
+
+  if (kind === 'all' || kind === 'itinerary') {
+    for (const story of stories) {
+      const code = asCode(story.destination.country, names);
+      if (!matchesCountry(story.destination.country, country, names)) continue;
+      story.itineraries.forEach((plan, index) => {
+        if (plan.deletedAt) return;
+        const score = rank(needle, [plan.title, plan.summary, story.title, story.destination.name, countryLabel(code, names)]);
+        if (needle && score === 0) return;
+        hits.push({
+          kind: 'itinerary',
+          title: plan.title,
+          subtitle: `${story.title} · ${plan.days.length} ${plan.days.length === 1 ? 'day' : 'days'}`,
+          imageUrl: plan.coverUrl || story.coverUrl,
+          country: code,
+          spotType: '',
+          code: '',
+          storySlug: story.slug,
+          spotId: '',
+          itinerarySlug: plan.slug,
+          username: story.creator.username,
+          creatorName: story.creator.displayName,
+          score,
+          popular: likes.get(`itinerary:${story.slug}:${plan.slug}`) ?? 0,
+          recent: (storyOrder.get(story.slug) ?? 0) * 1000 + index,
+        });
+      });
     }
   }
 
@@ -160,7 +189,17 @@ export function searchCatalog(
       if (country && !codes.has(country)) continue;
       const score = rank(needle, [profile.displayName, profile.username, profile.headline, profile.bio]);
       if (needle && score === 0) continue;
-      hits.push(creatorHit(profile.username, profile.displayName, profile.headline || profile.bio, profile.avatarUrl, storyCount.get(profile.username) ?? 0, score));
+      hits.push(
+        creatorHit(
+          profile.username,
+          profile.displayName,
+          profile.headline || profile.bio,
+          profile.avatarUrl,
+          storyCount.get(profile.username) ?? 0,
+          score,
+          creatorRank(profile.username, stories, storyLikes, storyOrder),
+        ),
+      );
     }
     for (const story of stories) {
       const username = story.creator.username;
@@ -170,13 +209,15 @@ export function searchCatalog(
       const score = rank(needle, [story.creator.displayName, username, story.creator.bio]);
       if (needle && score === 0) continue;
       const count = storyCount.get(username) ?? 1;
-      hits.push(creatorHit(username, story.creator.displayName, story.creator.bio, story.creator.avatarUrl, count, score));
+      hits.push(
+        creatorHit(username, story.creator.displayName, story.creator.bio, story.creator.avatarUrl, count, score, creatorRank(username, stories, storyLikes, storyOrder)),
+      );
     }
   }
 
   hits.sort((left, right) => compare(left, right, sort));
   const start = (page - 1) * limit;
-  const items = hits.slice(start, start + limit).map(({ score: _score, popular: _popular, ...item }) => item);
+  const items = hits.slice(start, start + limit).map(({ score: _score, popular: _popular, recent: _recent, ...item }) => item);
   return {
     page,
     limit,
@@ -193,6 +234,7 @@ function creatorHit(
   avatarUrl: string,
   stories: number,
   score: number,
+  rank: { popular: number; recent: number },
 ): Ranked {
   return {
     kind: 'creator',
@@ -204,11 +246,29 @@ function creatorHit(
     code: '',
     storySlug: '',
     spotId: '',
+    itinerarySlug: '',
     username,
     creatorName: displayName,
     score,
-    popular: stories,
+    popular: rank.popular,
+    recent: rank.recent,
   };
+}
+
+function creatorRank(
+  username: string,
+  stories: Story[],
+  storyLikes: Map<string, number>,
+  storyOrder: Map<string, number>,
+) {
+  let popular = 0;
+  let recent = 0;
+  for (const story of stories) {
+    if (story.creator.username !== username) continue;
+    popular += storyLikes.get(story.slug) ?? 0;
+    recent = Math.max(recent, storyOrder.get(story.slug) ?? 0);
+  }
+  return { popular, recent };
 }
 
 function rank(needle: string, fields: string[]) {
@@ -242,6 +302,7 @@ function countryLabel(code: string, names: Map<string, { name: string }>) {
 
 function compare(left: Ranked, right: Ranked, sort: SearchSort) {
   if (sort === 'name') return left.title.localeCompare(right.title) || right.score - left.score;
-  if (sort === 'popular') return right.popular - left.popular || right.score - left.score || left.title.localeCompare(right.title);
+  if (sort === 'popular') return right.popular - left.popular || right.recent - left.recent || left.title.localeCompare(right.title);
+  if (sort === 'recent') return right.recent - left.recent || right.score - left.score || left.title.localeCompare(right.title);
   return right.score - left.score || right.popular - left.popular || left.title.localeCompare(right.title);
 }

@@ -110,10 +110,23 @@ export class GlimpsesService {
       .filter((comment) => comment.glimpseId === glimpse.id);
     return {
       ...glimpse,
+      avatarUrl: this.avatarFor(glimpse),
       likes: likes.length,
       liked: likes.some((like) => like.userId === viewerId),
       comments,
     };
+  }
+
+  private avatarFor(glimpse: Glimpse) {
+    if (glimpse.avatarUrl) return glimpse.avatarUrl;
+    const profile = this.store
+      .getProfiles()
+      .find((item) => item.id === glimpse.creatorId || item.username === glimpse.username);
+    if (profile?.avatarUrl) return profile.avatarUrl;
+    const story = this.store
+      .getStories()
+      .find((item) => item.creator.username === glimpse.username && item.creator.avatarUrl);
+    return story?.creator.avatarUrl ?? "";
   }
 
   private requireGlimpse(id: string) {
