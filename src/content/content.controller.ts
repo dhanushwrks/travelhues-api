@@ -34,6 +34,17 @@ export class ContentController {
     return this.admin.createSpot(slug, body);
   }
 
+  @Post('stories/:slug/blogs')
+  @UseGuards(UserGuard, TccGuard)
+  createBlog(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.createBlog(slug, body);
+  }
+
   @Post('stories/:slug/itineraries')
   @UseGuards(UserGuard, TccGuard)
   createItinerary(

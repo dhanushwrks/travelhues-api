@@ -317,4 +317,5 @@ export const thailand: Story = {
       ],
     },
   ],
+  blogs: [],
 };

@@ -68,6 +68,11 @@ export class AdminController {
     return this.admin.createSpot(slug, body);
   }
 
+  @Post('stories/:slug/blogs')
+  createBlog(@Param('slug') slug: string, @Body() body: unknown) {
+    return this.admin.createBlog(slug, body);
+  }
+
   @Put('stories/:slug/spots/:spotId')
   updateSpot(
     @Param('slug') slug: string,

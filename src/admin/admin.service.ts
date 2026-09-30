@@ -12,6 +12,7 @@ import type {
   Itinerary,
   Spot,
   Story,
+  StoryBlog,
 } from '../content/content.types.js';
 import type { SpotCatalogItem } from '../content/spot-catalog.js';
 import { isCountryCode } from '../people/countries.js';
@@ -109,6 +110,10 @@ export class AdminService {
     if (this.store.getStories().some((item) => item.slug === story.slug)) {
       throw new ConflictException(`Story ${story.slug} already exists`);
     }
+    const ownerId = asRecord(body, 'Story').ownerId;
+    if (typeof ownerId === 'string' && /^[0-9a-f-]{36}$/i.test(ownerId)) {
+      story.ownerId = ownerId;
+    }
     await this.store.update((draft) => {
       draft.stories.push(story);
     });
@@ -128,6 +133,7 @@ export class AdminService {
         ownerId: current.ownerId,
         spots: current.spots,
         itineraries: current.itineraries,
+        blogs: current.blogs ?? [],
       };
     });
     return this.requireStory(slug);
@@ -152,6 +158,25 @@ export class AdminService {
         ?.spots.push(spot);
     });
     return spot;
+  }
+
+  async createBlog(storySlug: string, body: unknown): Promise<StoryBlog> {
+    const story = this.requireStory(storySlug);
+    const record = asRecord(body, 'Blog');
+    const blog: StoryBlog = {
+      slug: asSlug(record.slug, 'Blog slug'),
+      title: asText(record.title, 'Title'),
+      body: asText(record.body, 'Body'),
+    };
+    if ((story.blogs ?? []).some((item) => item.slug === blog.slug)) {
+      throw new ConflictException(`Blog ${blog.slug} already exists`);
+    }
+    await this.store.update((draft) => {
+      const current = draft.stories.find((item) => item.slug === storySlug);
+      if (!current) return;
+      current.blogs = [...(current.blogs ?? []), blog];
+    });
+    return blog;
   }
 
   async updateSpot(
@@ -318,6 +343,7 @@ function parseStory(
     creator: options.creator ?? parseCreator(record.creator),
     spots,
     itineraries,
+    blogs: [],
   };
 }
 

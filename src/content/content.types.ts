@@ -54,6 +54,12 @@ export type Destination = {
   lng: number;
 };
 
+export type StoryBlog = {
+  slug: string;
+  title: string;
+  body: string;
+};
+
 export type Story = {
   slug: string;
   title: string;
@@ -64,6 +70,7 @@ export type Story = {
   creator: Creator;
   spots: Spot[];
   itineraries: Itinerary[];
+  blogs: StoryBlog[];
 };
 
 export type ItineraryDetail = {

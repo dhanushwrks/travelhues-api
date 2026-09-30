@@ -290,6 +290,7 @@ export class StoreService implements OnModuleInit {
       destination_name, destination_country, destination_lat, destination_lng,
       creator_username, creator_display_name, creator_bio, creator_avatar_url,
       spots (id, type, title, description, images, lat, lng, address, avg_minutes, avg_cost_thb, tags, position),
+      story_blogs (slug, title, body, position),
       itineraries (
         slug, title, summary, cover_url, position,
         itinerary_days (
@@ -475,6 +476,14 @@ type StoryRow = {
   creator_avatar_url: string;
   spots: SpotRow[] | null;
   itineraries: ItineraryRow[] | null;
+  story_blogs: BlogRow[] | null;
+};
+
+type BlogRow = {
+  slug: string;
+  title: string;
+  body: string;
+  position: number;
 };
 
 function blankStore(settings: Settings, stories: Story[]): StoreFile {
@@ -538,6 +547,11 @@ function mapStory(row: StoryRow): Story {
     },
     spots: byPosition(row.spots ?? []).map(mapSpot),
     itineraries: byPosition(row.itineraries ?? []).map(mapItinerary),
+    blogs: byPosition(row.story_blogs ?? []).map((blog) => ({
+      slug: blog.slug,
+      title: blog.title,
+      body: blog.body,
+    })),
   };
 }
 
