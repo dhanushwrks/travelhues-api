@@ -8,6 +8,7 @@ import type { Glimpse, GlimpseComment, GlimpseLike } from '../glimpses/glimpses.
 import type { ContentMark } from '../marks/marks.types.js';
 import type { CreatorInvite, Profile, WaitlistRequest } from '../people/people.types.js';
 import type { Settings } from './store.types.js';
+import { seedSpotCatalog, type SpotCatalogItem } from '../content/spot-catalog.js';
 
 type StoreFile = {
   settings: Settings;
@@ -48,6 +49,7 @@ export class StoreService implements OnModuleInit {
   private ready: Promise<void> = Promise.resolve();
   private supabase: SupabaseClient | null = null;
   private databaseReady = false;
+  private catalog: SpotCatalogItem[] = seedSpotCatalog;
 
   async onModuleInit() {
     this.ready = this.load();
@@ -88,6 +90,25 @@ export class StoreService implements OnModuleInit {
 
   getMarks(): ContentMark[] {
     return structuredClone(this.data.contentMarks);
+  }
+
+  getCatalog(): SpotCatalogItem[] {
+    return structuredClone(this.catalog);
+  }
+
+  async replaceCatalog(next: SpotCatalogItem[]): Promise<SpotCatalogItem[]> {
+    await this.ready;
+    const used = new Set(
+      this.data.stories.flatMap((story) => story.spots.map((spot) => spot.type)),
+    );
+    for (const slug of used) {
+      if (!next.some((item) => item.slug === slug)) {
+        throw new Error(`Remove the spots that use ${slug} before deleting that category`);
+      }
+    }
+    if (this.databaseReady) await this.writeCatalog(next);
+    this.catalog = structuredClone(next);
+    return this.getCatalog();
   }
 
   async update(mutator: (draft: StoreFile) => void): Promise<void> {
@@ -180,6 +201,7 @@ export class StoreService implements OnModuleInit {
       await this.persistDatabase();
       await this.loadPeopleFile();
       await this.loadCommunity();
+      await this.loadCatalog();
       return;
     }
     this.data = blankStore(
@@ -188,6 +210,77 @@ export class StoreService implements OnModuleInit {
     );
     await this.loadPeopleFile();
     await this.loadCommunity();
+    await this.loadCatalog();
+  }
+
+  private async loadCatalog() {
+    if (!this.supabase) return;
+    const categories = await this.supabase
+      .from('spot_categories')
+      .select('slug, label, position')
+      .order('position');
+    if (categories.error) {
+      if (isMissingSchema(categories.error.message)) return;
+      throw new Error(categories.error.message);
+    }
+    const kinds = await this.supabase
+      .from('spot_kinds')
+      .select('category_slug, label, position')
+      .order('position');
+    if (kinds.error) throw new Error(kinds.error.message);
+    const rows = categories.data ?? [];
+    if (rows.length === 0) {
+      this.catalog = structuredClone(seedSpotCatalog);
+      await this.writeCatalog(this.catalog);
+      return;
+    }
+    const kindRows = kinds.data ?? [];
+    this.catalog = rows.map((row) => ({
+      slug: row.slug,
+      label: row.label,
+      kinds: kindRows
+        .filter((kind) => kind.category_slug === row.slug)
+        .map((kind) => kind.label),
+    }));
+  }
+
+  private async writeCatalog(next: SpotCatalogItem[]) {
+    if (!this.supabase) return;
+    for (const [position, item] of next.entries()) {
+      const saved = await this.supabase.from('spot_categories').upsert({
+        slug: item.slug,
+        label: item.label,
+        position,
+      });
+      if (saved.error) throw new Error(saved.error.message);
+    }
+    const slugs = next.map((item) => item.slug);
+    const cleared = await this.supabase
+      .from('spot_kinds')
+      .delete()
+      .in('category_slug', slugs);
+    if (cleared.error) throw new Error(cleared.error.message);
+    const kindRows = next.flatMap((item) =>
+      item.kinds.map((label, position) => ({
+        category_slug: item.slug,
+        label,
+        position,
+      })),
+    );
+    if (kindRows.length > 0) {
+      const inserted = await this.supabase.from('spot_kinds').insert(kindRows);
+      if (inserted.error) throw new Error(inserted.error.message);
+    }
+    const leftoverKinds = await this.supabase
+      .from('spot_kinds')
+      .delete()
+      .not('category_slug', 'in', `(${slugs.join(',')})`);
+    if (leftoverKinds.error) throw new Error(leftoverKinds.error.message);
+    const removed = await this.supabase
+      .from('spot_categories')
+      .delete()
+      .not('slug', 'in', `(${slugs.join(',')})`);
+    if (removed.error) throw new Error(removed.error.message);
   }
 
   private async fetchStories(): Promise<Story[]> {

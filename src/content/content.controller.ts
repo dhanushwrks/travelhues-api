@@ -50,6 +50,11 @@ export class ContentController {
     return this.content.getPublicSettings();
   }
 
+  @Get('spot-catalog')
+  spotCatalog() {
+    return this.admin.catalog();
+  }
+
   @Get('stories')
   @UseGuards(UserGuard)
   getStories() {

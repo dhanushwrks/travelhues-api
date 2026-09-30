@@ -27,6 +27,16 @@ export class AdminController {
     return this.admin.saveSettings(body);
   }
 
+  @Get('spot-catalog')
+  spotCatalog() {
+    return this.admin.catalog();
+  }
+
+  @Put('spot-catalog')
+  saveSpotCatalog(@Body() body: unknown) {
+    return this.admin.saveCatalog(body);
+  }
+
   @Get('stories')
   stories() {
     return this.admin.stories();

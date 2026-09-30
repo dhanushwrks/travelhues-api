@@ -11,10 +11,9 @@ import type {
   Destination,
   Itinerary,
   Spot,
-  SpotType,
   Story,
 } from '../content/content.types.js';
-import { spotTypes } from '../content/content.types.js';
+import type { SpotCatalogItem } from '../content/spot-catalog.js';
 import { isCountryCode } from '../people/countries.js';
 import { StoreService } from '../store/store.service.js';
 import type { Settings } from '../store/store.types.js';
@@ -35,6 +34,21 @@ export class AdminService {
       draft.settings = settings;
     });
     return this.store.getSettings();
+  }
+
+  catalog() {
+    return this.store.getCatalog();
+  }
+
+  async saveCatalog(body: unknown): Promise<SpotCatalogItem[]> {
+    const catalog = parseCatalog(body);
+    try {
+      return await this.store.replaceCatalog(catalog);
+    } catch (caught) {
+      throw new BadRequestException(
+        caught instanceof Error ? caught.message : 'Could not save categories',
+      );
+    }
   }
 
   stories() {
@@ -63,6 +77,7 @@ export class AdminService {
   ): Promise<Story> {
     const story = parseStory(body, {
       requireEmptyCollections: true,
+      catalog: this.store.getCatalog(),
       creator: {
         username: owner.username,
         displayName: owner.displayName,
@@ -87,7 +102,10 @@ export class AdminService {
   }
 
   async createStory(body: unknown): Promise<Story> {
-    const story = parseStory(body, { requireEmptyCollections: true });
+    const story = parseStory(body, {
+      requireEmptyCollections: true,
+      catalog: this.store.getCatalog(),
+    });
     if (this.store.getStories().some((item) => item.slug === story.slug)) {
       throw new ConflictException(`Story ${story.slug} already exists`);
     }
@@ -99,7 +117,7 @@ export class AdminService {
 
   async updateStory(slug: string, body: unknown): Promise<Story> {
     this.requireStory(slug);
-    const next = parseStory(body, { slug });
+    const next = parseStory(body, { slug, catalog: this.store.getCatalog() });
     await this.store.update((draft) => {
       const index = draft.stories.findIndex((item) => item.slug === slug);
       const current = draft.stories[index];
@@ -124,7 +142,7 @@ export class AdminService {
 
   async createSpot(storySlug: string, body: unknown): Promise<Spot> {
     const story = this.requireStory(storySlug);
-    const spot = parseSpot(body);
+    const spot = parseSpot(body, undefined, this.store.getCatalog());
     if (story.spots.some((item) => item.id === spot.id)) {
       throw new ConflictException(`Spot ${spot.id} already exists`);
     }
@@ -145,7 +163,7 @@ export class AdminService {
     if (!story.spots.some((item) => item.id === spotId)) {
       throw new NotFoundException(`Spot ${spotId} was not found`);
     }
-    const spot = parseSpot(body, spotId);
+    const spot = parseSpot(body, spotId, this.store.getCatalog());
     await this.store.update((draft) => {
       const current = draft.stories.find((item) => item.slug === storySlug);
       if (!current) return;
@@ -282,11 +300,14 @@ function parseStory(
     slug?: string;
     requireEmptyCollections?: boolean;
     creator?: Story['creator'];
+    catalog?: SpotCatalogItem[];
   },
 ): Story {
   const record = asRecord(body, 'Story');
   const slug = options.slug ?? asSlug(record.slug, 'Story slug');
-  const spots = options.requireEmptyCollections ? [] : asSpotList(record.spots);
+  const spots = options.requireEmptyCollections
+    ? []
+    : asSpotList(record.spots, options.catalog ?? []);
   const itineraries = options.requireEmptyCollections ? [] : [];
   return {
     slug,
@@ -300,10 +321,10 @@ function parseStory(
   };
 }
 
-function asSpotList(value: unknown): Spot[] {
+function asSpotList(value: unknown, catalog: SpotCatalogItem[]): Spot[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new BadRequestException('Spots must be a list');
-  return value.map((item) => parseSpot(item));
+  return value.map((item) => parseSpot(item, undefined, catalog));
 }
 
 function parseDestination(value: unknown): Destination {
@@ -326,15 +347,21 @@ function parseCreator(value: unknown): Creator {
   };
 }
 
-function parseSpot(body: unknown, id?: string): Spot {
+function parseSpot(body: unknown, id: string | undefined, catalog: SpotCatalogItem[]): Spot {
   const record = asRecord(body, 'Spot');
-  const type = record.type;
-  if (!spotTypes.includes(type as SpotType)) {
-    throw new BadRequestException('Spot type is not recognised');
+  const type = asSlug(record.type, 'Spot category');
+  const category = catalog.find((item) => item.slug === type);
+  if (!category) throw new BadRequestException('Spot category is not recognised');
+  const tags = asStringArray(record.tags, 'Tags');
+  for (const tag of tags) {
+    const owner = catalog.find((item) => item.kinds.includes(tag));
+    if (owner && owner.slug !== category.slug) {
+      throw new BadRequestException(`${tag} is not a kind of ${category.label}`);
+    }
   }
   return {
     id: id ?? asSlug(record.id, 'Spot id'),
-    type: type as SpotType,
+    type,
     title: asText(record.title, 'Spot title'),
     description: asText(record.description, 'Description'),
     images: asStringArray(record.images, 'Images').map((image) =>
@@ -345,8 +372,39 @@ function parseSpot(body: unknown, id?: string): Spot {
     address: asText(record.address, 'Address'),
     avgMinutes: asNonNegative(record.avgMinutes, 'Time'),
     avgCostThb: asNonNegative(record.avgCostThb, 'Cost'),
-    tags: asStringArray(record.tags, 'Tags'),
+    tags,
   };
+}
+
+function parseCatalog(body: unknown): SpotCatalogItem[] {
+  if (!Array.isArray(body) || body.length === 0) {
+    throw new BadRequestException('Add at least one category');
+  }
+  const seen = new Set<string>();
+  return body.map((item, index) => {
+    const record = asRecord(item, `Category ${index + 1}`);
+    const label = asText(record.label, `Category ${index + 1}`);
+    const slug = asSlug(record.slug ?? slugify(label), `Category ${index + 1}`);
+    if (seen.has(slug)) throw new BadRequestException(`${label} repeats a category`);
+    seen.add(slug);
+    const kinds = asStringArray(record.kinds, `${label} kinds`);
+    const kindSeen = new Set<string>();
+    for (const kind of kinds) {
+      const name = kind.trim();
+      if (!name) throw new BadRequestException(`${label} has an empty kind`);
+      const key = name.toLowerCase();
+      if (kindSeen.has(key)) throw new BadRequestException(`${name} is listed twice`);
+      kindSeen.add(key);
+    }
+    return { slug, label, kinds: kinds.map((kind) => kind.trim()) };
+  });
+}
+
+function slugify(label: string) {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 function parseItinerary(

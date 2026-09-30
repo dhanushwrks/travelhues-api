@@ -1,12 +1,4 @@
-export const spotTypes = [
-  'stay',
-  'food',
-  'activity',
-  'sightseeing',
-  'shop',
-] as const;
-
-export type SpotType = (typeof spotTypes)[number];
+export type SpotType = string;
 
 export type Spot = {
   id: string;
