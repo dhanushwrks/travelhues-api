@@ -58,6 +58,7 @@ export type StoryBlog = {
   slug: string;
   title: string;
   body: string;
+  coverUrl: string;
 };
 
 export type Story = {

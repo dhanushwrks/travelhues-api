@@ -1,12 +1,4 @@
-create table public.story_blogs (
-  story_slug text not null references public.stories (slug) on delete cascade,
-  slug text not null,
-  title text not null,
-  body text not null,
-  cover_url text not null default '',
-  position integer not null,
-  primary key (story_slug, slug)
-);
+alter table public.story_blogs add column if not exists cover_url text not null default '';
 
 create or replace function public.save_content(payload jsonb)
 returns void
@@ -228,15 +220,3 @@ begin
   perform public.save_community(payload);
 end;
 $$;
-
-revoke all on table public.app_settings from anon, authenticated;
-revoke all on table public.stories from anon, authenticated;
-revoke all on table public.spots from anon, authenticated;
-revoke all on table public.itineraries from anon, authenticated;
-revoke all on table public.itinerary_days from anon, authenticated;
-revoke all on table public.itinerary_blocks from anon, authenticated;
-revoke all on sequence public.itinerary_days_id_seq from anon, authenticated;
-revoke all on sequence public.itinerary_blocks_id_seq from anon, authenticated;
-
-revoke all on table public.story_blogs from anon, authenticated;
-alter table public.story_blogs enable row level security;

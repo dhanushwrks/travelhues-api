@@ -33,7 +33,7 @@ export const thailand: Story = {
       lng: 100.514,
       address: "Charoen Krung, Bangkok",
       avgMinutes: 0,
-      avgCostThb: 4200,
+      avgCostThb: 11340,
       tags: ["riverside", "breakfast"],
     },
     {
@@ -47,7 +47,7 @@ export const thailand: Story = {
       lng: 98.9678,
       address: "Nimmanhaemin, Chiang Mai",
       avgMinutes: 0,
-      avgCostThb: 1800,
+      avgCostThb: 4860,
       tags: ["guesthouse", "bikes"],
     },
     {
@@ -61,7 +61,7 @@ export const thailand: Story = {
       lng: 100.5101,
       address: "Yaowarat Road, Bangkok",
       avgMinutes: 45,
-      avgCostThb: 280,
+      avgCostThb: 756,
       tags: ["street food", "night"],
     },
     {
@@ -75,7 +75,7 @@ export const thailand: Story = {
       lng: 99.0012,
       address: "Warorot Market, Chiang Mai",
       avgMinutes: 40,
-      avgCostThb: 80,
+      avgCostThb: 216,
       tags: ["breakfast", "market"],
     },
     {
@@ -89,7 +89,7 @@ export const thailand: Story = {
       lng: 100.488,
       address: "Thonburi canals, Bangkok",
       avgMinutes: 90,
-      avgCostThb: 1200,
+      avgCostThb: 3240,
       tags: ["boat", "afternoon"],
     },
     {
@@ -103,7 +103,7 @@ export const thailand: Story = {
       lng: 98.985,
       address: "Wualai Road, Chiang Mai",
       avgMinutes: 240,
-      avgCostThb: 1500,
+      avgCostThb: 4050,
       tags: ["class", "market"],
     },
     {
@@ -117,7 +117,7 @@ export const thailand: Story = {
       lng: 100.4889,
       address: "Wat Arun, Bangkok",
       avgMinutes: 90,
-      avgCostThb: 200,
+      avgCostThb: 540,
       tags: ["temple", "morning"],
     },
     {
@@ -131,7 +131,7 @@ export const thailand: Story = {
       lng: 98.9217,
       address: "Doi Suthep, Chiang Mai",
       avgMinutes: 120,
-      avgCostThb: 80,
+      avgCostThb: 216,
       tags: ["viewpoint", "mountain"],
     },
     {
@@ -145,7 +145,7 @@ export const thailand: Story = {
       lng: 98.9866,
       address: "Old City, Chiang Mai",
       avgMinutes: 45,
-      avgCostThb: 50,
+      avgCostThb: 135,
       tags: ["temple", "evening"],
     },
     {
@@ -159,7 +159,7 @@ export const thailand: Story = {
       lng: 100.5508,
       address: "Chatuchak Weekend Market, Bangkok",
       avgMinutes: 150,
-      avgCostThb: 1500,
+      avgCostThb: 4050,
       tags: ["market", "weekend"],
     },
   ],

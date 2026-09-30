@@ -167,6 +167,7 @@ export class AdminService {
       slug: asSlug(record.slug, 'Blog slug'),
       title: asText(record.title, 'Title'),
       body: asText(record.body, 'Body'),
+      coverUrl: optionalCover(record.coverUrl),
     };
     if ((story.blogs ?? []).some((item) => item.slug === blog.slug)) {
       throw new ConflictException(`Blog ${blog.slug} already exists`);
@@ -523,6 +524,11 @@ function asStringArray(value: unknown, label: string) {
     throw new BadRequestException(`${label} must be a list of text`);
   }
   return value.map((item) => item.trim()).filter((item) => item !== '');
+}
+
+function optionalCover(value: unknown) {
+  if (typeof value !== 'string' || value.trim() === '') return '';
+  return asHttpUrl(value, 'Cover URL');
 }
 
 function asHttpUrl(value: unknown, label: string) {
