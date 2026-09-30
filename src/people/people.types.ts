@@ -1,9 +1,8 @@
 export const socialPlatforms = [
+  'youtube',
   'instagram',
   'facebook',
-  'youtube',
-  'x',
-  'tiktok',
+  'linkedin',
   'website',
 ] as const;
 
@@ -29,9 +28,15 @@ export type Profile = {
   socials: SocialLink[];
   avatarUrl: string;
   coverUrl: string;
+  /** Short intro clip for TCC avatars; empty when unset. */
+  introVideoUrl: string;
   hidden: boolean;
   disabled: boolean;
   deletedAt: string | null;
+  /** False for Google-only accounts until they set a password. */
+  hasPassword: boolean;
+  /** When set, travelers cannot change username again. Null = one change still allowed. */
+  usernameChangedAt: string | null;
 };
 
 export type WaitlistStatus = 'pending' | 'accepted' | 'declined';

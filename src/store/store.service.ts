@@ -411,6 +411,20 @@ export class StoreService implements OnModuleInit {
     const result = await this.supabase.rpc('save_content', { payload: this.data });
     if (result.error) throw new Error(result.error.message);
     await this.persistBrandLinks();
+    await this.persistIntroVideos();
+  }
+
+  private async persistIntroVideos() {
+    if (!this.supabase) return;
+    for (const profile of this.data.profiles) {
+      const result = await this.supabase
+        .from('profiles')
+        .update({ intro_video_url: profile.introVideoUrl ?? '' })
+        .eq('id', profile.id);
+      if (result.error && !isMissingSchema(result.error.message)) {
+        throw new Error(result.error.message);
+      }
+    }
   }
 
   private async persistBrandLinks() {
@@ -677,9 +691,12 @@ type ProfileRow = {
   socials: Profile['socials'] | null;
   avatar_url: string | null;
   cover_url: string | null;
+  intro_video_url?: string | null;
   hidden: boolean | null;
   disabled?: boolean | null;
   deleted_at?: string | null;
+  has_password?: boolean | null;
+  username_changed_at?: string | null;
 };
 
 type WaitlistRow = {
@@ -758,10 +775,18 @@ function mapProfile(row: ProfileRow): Profile {
     socials: row.socials ?? [],
     avatarUrl: row.avatar_url ?? '',
     coverUrl: row.cover_url ?? '',
+    introVideoUrl: row.intro_video_url ?? '',
     hidden: row.hidden ?? false,
     disabled: row.disabled ?? false,
     deletedAt: rowTime(row.deleted_at),
-  };
+    hasPassword: typeof row.has_password === 'boolean' ? row.has_password : false,
+    usernameChangedAt:
+      row.username_changed_at === undefined
+        ? undefined
+        : row.username_changed_at
+          ? row.username_changed_at
+          : null,
+  } as Profile;
 }
 
 function mapWaitlist(row: WaitlistRow): WaitlistRequest {

@@ -46,9 +46,12 @@ export class AuthService {
         socials: [],
         avatarUrl: '',
         coverUrl: '',
+        introVideoUrl: '',
         hidden: false,
         disabled: false,
         deletedAt: null,
+        hasPassword: true,
+        usernameChangedAt: new Date().toISOString(),
       });
     });
     return this.login({ email: input.email, password: input.password, intent: 'traveler' });
@@ -176,6 +179,14 @@ export class AuthService {
     const admin = this.adminClient();
     const updated = await admin.auth.admin.updateUserById(id, { password });
     if (updated.error) throw new BadRequestException(updated.error.message);
+  }
+
+  async authProviders(id: string): Promise<string[]> {
+    const admin = this.adminClient();
+    const result = await admin.auth.admin.getUserById(id);
+    if (result.error || !result.data.user) return [];
+    const identities = result.data.user.identities ?? [];
+    return identities.map((item) => item.provider).filter(Boolean);
   }
 
   async deleteAccount(id: string) {

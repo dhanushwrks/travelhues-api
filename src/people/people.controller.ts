@@ -61,16 +61,22 @@ export class PeopleController {
   @Get('media/:name')
   @Header('Cache-Control', 'public, max-age=86400')
   media(@Param('name') name: string) {
-    if (!/^[a-f0-9]{16}\.(jpg|png|webp)$/.test(name)) {
-      throw new NotFoundException('Photo was not found');
+    if (!/^[a-f0-9]{16}\.(jpg|png|webp|mp4|webm|mov)$/.test(name)) {
+      throw new NotFoundException('Media was not found');
     }
     const path = join(process.cwd(), 'data', 'media', name);
-    if (!existsSync(path)) throw new NotFoundException('Photo was not found');
+    if (!existsSync(path)) throw new NotFoundException('Media was not found');
     const type = name.endsWith('.png')
       ? 'image/png'
       : name.endsWith('.webp')
         ? 'image/webp'
-        : 'image/jpeg';
+        : name.endsWith('.mp4')
+          ? 'video/mp4'
+          : name.endsWith('.webm')
+            ? 'video/webm'
+            : name.endsWith('.mov')
+              ? 'video/quicktime'
+              : 'image/jpeg';
     return new StreamableFile(createReadStream(path), { type });
   }
 
@@ -94,6 +100,12 @@ export class PeopleController {
   async me(@Req() request: AuthedRequest) {
     await this.people.ensureProfile(request.user);
     return this.people.me(await this.auth.verify(this.token(request)));
+  }
+
+  @Get('usernames/:username/available')
+  @UseGuards(UserGuard)
+  usernameAvailable(@Param('username') username: string, @Req() request: AuthedRequest) {
+    return this.people.usernameAvailable(request.user, username);
   }
 
   @Patch('me')

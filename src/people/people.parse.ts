@@ -33,6 +33,8 @@ export function parseProfilePatch(body: unknown) {
     hidden?: boolean;
     avatarDataUrl?: string;
     coverDataUrl?: string;
+    introVideoUrl?: string;
+    introVideoDataUrl?: string;
   } = {};
   if ('displayName' in record) patch.displayName = asText(record.displayName, 'Name', 80);
   if ('username' in record) patch.username = asHandle(record.username);
@@ -53,21 +55,30 @@ export function parseProfilePatch(body: unknown) {
   }
   if ('avatarDataUrl' in record) patch.avatarDataUrl = photoPatch(record.avatarDataUrl);
   if ('coverDataUrl' in record) patch.coverDataUrl = photoPatch(record.coverDataUrl);
+  if ('introVideoUrl' in record) patch.introVideoUrl = videoUrlPatch(record.introVideoUrl);
+  if ('introVideoDataUrl' in record) patch.introVideoDataUrl = videoDataPatch(record.introVideoDataUrl);
   return patch;
 }
 
-export function parsePasswordChange(body: unknown) {
+export function parsePasswordChange(body: unknown, options: { requireCurrent: boolean }) {
   const record = asRecord(body);
-  const currentPassword = asPassword(record.currentPassword, 'Current password');
   const password = asPassword(record.password, 'New password');
   const confirmPassword = typeof record.confirmPassword === 'string' ? record.confirmPassword : '';
   if (confirmPassword !== password) {
     throw new BadRequestException('New password and confirmation do not match');
   }
+  if (!options.requireCurrent) {
+    return { currentPassword: null as string | null, password };
+  }
+  const currentPassword = asPassword(record.currentPassword, 'Current password');
   if (password === currentPassword) {
     throw new BadRequestException('Choose a password that is different from the current one');
   }
   return { currentPassword, password };
+}
+
+export function parseUsernameQuery(value: string) {
+  return asHandle(value);
 }
 
 function parseProfileFields(
@@ -229,5 +240,39 @@ function optionalDataUrl(value: unknown) {
     throw new BadRequestException('Photo must be an image');
   }
   if (value.length > 2_800_000) throw new BadRequestException('Photo must be under 2 MB');
+  return value;
+}
+
+function videoUrlPatch(value: unknown) {
+  if (value == null || value === '') return '';
+  if (typeof value !== 'string') throw new BadRequestException('Intro video must be a link');
+  const text = value.trim();
+  if (text.startsWith('/media/')) {
+    if (!/^\/media\/[a-f0-9]{16}\.(mp4|webm|mov)$/i.test(text)) {
+      throw new BadRequestException('Intro video link is not valid');
+    }
+    return text;
+  }
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new BadRequestException('Intro video must be a web address');
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new BadRequestException('Intro video must be a web address');
+  }
+  return text;
+}
+
+function videoDataPatch(value: unknown) {
+  if (value == null || value === '') return '';
+  if (typeof value !== 'string' || !/^data:video\/(mp4|webm|quicktime);base64,/i.test(value)) {
+    throw new BadRequestException('Intro video must be an MP4, WebM, or MOV file');
+  }
+  // Base64 expands ~33%; keep under the 12 MB JSON body limit.
+  if (value.length > 10_500_000) {
+    throw new BadRequestException('Intro video must be under 8 MB');
+  }
   return value;
 }

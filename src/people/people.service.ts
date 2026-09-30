@@ -17,6 +17,7 @@ import {
   parseInviteAccount,
   parsePasswordChange,
   parseProfilePatch,
+  parseUsernameQuery,
   parseWaitlist,
 } from './people.parse.js';
 import type {
@@ -198,28 +199,46 @@ export class PeopleService {
     });
   }
 
-  me(user: AuthUser) {
+  async me(user: AuthUser) {
     const profile = this.store.getProfiles().find((item) => item.id === user.id);
     if (!profile) throw new NotFoundException('Profile was not found');
-    return this.present(profile, true);
+    normalizeProfileInPlace(profile);
+    const hasPassword = await this.resolveHasPassword(profile, user.id);
+    if (hasPassword !== profile.hasPassword) {
+      await this.store.update((draft) => {
+        const current = draft.profiles.find((item) => item.id === user.id);
+        if (current) current.hasPassword = hasPassword;
+      });
+    }
+    return this.present({ ...profile, hasPassword }, true);
   }
 
   async updateMe(user: AuthUser, body: unknown) {
     const patch = parseProfilePatch(body);
     const avatarUrl = patch.avatarDataUrl ? await this.saveImage(patch.avatarDataUrl) : undefined;
     const coverUrl = patch.coverDataUrl ? await this.saveImage(patch.coverDataUrl) : undefined;
+    const introFromData =
+      patch.introVideoDataUrl && patch.introVideoDataUrl !== ''
+        ? await this.saveVideo(patch.introVideoDataUrl)
+        : undefined;
     let next: Profile | undefined;
     await this.store.update((draft) => {
       const profile = draft.profiles.find((item) => item.id === user.id);
       if (!profile) throw new NotFoundException('Profile was not found');
+      normalizeProfileInPlace(profile);
       if (patch.username && patch.username !== profile.username) {
-        if (profile.role !== 'tcc') {
-          throw new BadRequestException('Username cannot be changed');
+        const canChange =
+          profile.role === 'tcc' || profile.usernameChangedAt === null;
+        if (!canChange) {
+          throw new BadRequestException('Username can only be changed once');
         }
         if (handleTaken(draft, patch.username, profile.id)) {
           throw new ConflictException('That handle is already in use');
         }
         profile.username = patch.username;
+        if (profile.role !== 'tcc') {
+          profile.usernameChangedAt = new Date().toISOString();
+        }
       }
       if (patch.displayName !== undefined) profile.displayName = patch.displayName;
       if (patch.headline !== undefined) profile.headline = patch.headline;
@@ -236,6 +255,13 @@ export class PeopleService {
       else if (avatarUrl !== undefined) profile.avatarUrl = avatarUrl;
       if (patch.coverDataUrl === '') profile.coverUrl = '';
       else if (coverUrl !== undefined) profile.coverUrl = coverUrl;
+      if (profile.role === 'tcc') {
+        if (patch.introVideoUrl === '') profile.introVideoUrl = '';
+        else if (introFromData !== undefined) profile.introVideoUrl = introFromData;
+        else if (patch.introVideoUrl !== undefined) profile.introVideoUrl = patch.introVideoUrl;
+      } else if (patch.introVideoUrl !== undefined || patch.introVideoDataUrl !== undefined) {
+        throw new BadRequestException('Only a creator can set an introduction video');
+      }
       if (profile.role === 'tcc') requireCreatorBasics(profile);
       next = structuredClone(profile);
     });
@@ -245,10 +271,49 @@ export class PeopleService {
   }
 
   async changePassword(user: AuthUser, body: unknown) {
-    const input = parsePasswordChange(body);
-    await this.auth.checkPassword(user.email, input.currentPassword);
+    const profile = this.store.getProfiles().find((item) => item.id === user.id);
+    if (!profile) throw new NotFoundException('Profile was not found');
+    normalizeProfileInPlace(profile);
+    const hasPassword = await this.resolveHasPassword(profile, user.id);
+    const input = parsePasswordChange(body, { requireCurrent: hasPassword });
+    if (hasPassword) {
+      if (!input.currentPassword) {
+        throw new BadRequestException('Current password is required');
+      }
+      await this.auth.checkPassword(user.email, input.currentPassword);
+    }
     await this.auth.updatePassword(user.id, input.password);
-    return { updated: true };
+    await this.store.update((draft) => {
+      const current = draft.profiles.find((item) => item.id === user.id);
+      if (!current) throw new NotFoundException('Profile was not found');
+      current.hasPassword = true;
+    });
+    return { updated: true, hasPassword: true };
+  }
+
+  usernameAvailable(user: AuthUser, handle: string) {
+    const username = parseUsernameQuery(handle);
+    const profiles = this.store.getProfiles();
+    const self = profiles.find((item) => item.id === user.id);
+    if (self && self.username === username) {
+      return { available: true, username };
+    }
+    const draft = {
+      profiles,
+      waitlist: this.store.getWaitlist(),
+      invites: this.store.getInvites(),
+    };
+    if (handleTaken(draft, username, user.id)) {
+      return { available: false, username };
+    }
+    return { available: true, username };
+  }
+
+  private async resolveHasPassword(profile: Profile, userId: string) {
+    if (profile.hasPassword) return true;
+    const providers = await this.auth.authProviders(userId);
+    if (providers.includes('email')) return true;
+    return false;
   }
 
   async disableMe(user: AuthUser) {
@@ -313,9 +378,12 @@ export class PeopleService {
         socials: [],
         avatarUrl: story.creator.avatarUrl,
         coverUrl: story.coverUrl,
+        introVideoUrl: '',
         hidden: false,
         disabled: false,
         deletedAt: null,
+        hasPassword: true,
+        usernameChangedAt: null,
       },
       false,
     );
@@ -326,22 +394,28 @@ export class PeopleService {
     const visible = stories.map((story) => publicStory(story));
     const spots = visible.reduce((total, story) => total + story.spots.length, 0);
     const itineraries = visible.reduce((total, story) => total + story.itineraries.length, 0);
+    const normalized = normalizeProfile(profile);
     return {
-      id: includePrivate ? profile.id : undefined,
-      email: includePrivate ? profile.email : undefined,
-      dateOfBirth: includePrivate ? profile.dateOfBirth : undefined,
-      username: profile.username,
-      displayName: profile.displayName,
-      headline: profile.headline,
-      bio: profile.bio,
-      country: profile.country,
-      countriesTraveled: profile.countriesTraveled,
-      hobbies: profile.hobbies,
-      socials: profile.socials,
-      avatarUrl: profile.avatarUrl,
-      coverUrl: profile.coverUrl,
-      role: profile.role,
-      hidden: profile.hidden,
+      id: includePrivate ? normalized.id : undefined,
+      email: includePrivate ? normalized.email : undefined,
+      dateOfBirth: includePrivate ? normalized.dateOfBirth : undefined,
+      username: normalized.username,
+      displayName: normalized.displayName,
+      headline: normalized.headline,
+      bio: normalized.bio,
+      country: normalized.country,
+      countriesTraveled: normalized.countriesTraveled,
+      hobbies: normalized.hobbies,
+      socials: normalized.socials,
+      avatarUrl: normalized.avatarUrl,
+      coverUrl: normalized.coverUrl,
+      introVideoUrl: normalized.introVideoUrl,
+      role: normalized.role,
+      hidden: normalized.hidden,
+      hasPassword: includePrivate ? normalized.hasPassword : undefined,
+      canChangeUsername: includePrivate
+        ? normalized.role === 'tcc' || normalized.usernameChangedAt === null
+        : undefined,
       counts: {
         stories: stories.length,
         spots,
@@ -384,6 +458,9 @@ export class PeopleService {
     if (typeof dataUrl !== 'string' || dataUrl === '') {
       throw new BadRequestException('Photo is required');
     }
+    if (dataUrl.startsWith('data:video/')) {
+      return { url: await this.saveVideo(dataUrl) };
+    }
     return { url: await this.saveImage(dataUrl) };
   }
 
@@ -395,6 +472,22 @@ export class PeopleService {
       throw new BadRequestException('Photo must be under 2 MB');
     }
     const ext = matched[1].toLowerCase() === 'jpeg' ? 'jpg' : matched[1].toLowerCase();
+    const name = `${randomBytes(8).toString('hex')}.${ext}`;
+    const directory = join(process.cwd(), 'data', 'media');
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, name), bytes);
+    return `/media/${name}`;
+  }
+
+  private async saveVideo(dataUrl: string) {
+    const matched = /^data:video\/(mp4|webm|quicktime);base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl);
+    if (!matched) throw new BadRequestException('Intro video must be an MP4, WebM, or MOV file');
+    const bytes = Buffer.from(matched[2], 'base64');
+    if (bytes.length > 8_000_000) {
+      throw new BadRequestException('Intro video must be under 8 MB');
+    }
+    const kind = matched[1].toLowerCase();
+    const ext = kind === 'quicktime' ? 'mov' : kind;
     const name = `${randomBytes(8).toString('hex')}.${ext}`;
     const directory = join(process.cwd(), 'data', 'media');
     await mkdir(directory, { recursive: true });
@@ -419,9 +512,12 @@ function blankProfile(user: AuthUser): Profile {
     socials: [],
     avatarUrl: '',
     coverUrl: '',
+    introVideoUrl: '',
     hidden: false,
     disabled: false,
     deletedAt: null,
+    hasPassword: false,
+    usernameChangedAt: null,
   };
 }
 
@@ -447,10 +543,40 @@ function profileFromDraft(
     socials: draft.socials,
     avatarUrl: images.avatarUrl,
     coverUrl: images.coverUrl,
+    introVideoUrl: '',
     hidden: false,
     disabled: false,
     deletedAt: null,
+    hasPassword: true,
+    usernameChangedAt: role === 'traveler' ? new Date().toISOString() : null,
   };
+}
+
+function normalizeProfile(profile: Profile): Profile {
+  const next = { ...profile };
+  normalizeProfileInPlace(next);
+  return next;
+}
+
+function normalizeProfileInPlace(profile: Profile) {
+  if (typeof profile.introVideoUrl !== 'string') {
+    profile.introVideoUrl = '';
+  }
+  if (typeof profile.hasPassword !== 'boolean') {
+    // Resolved on /me via auth providers; false until proven.
+    profile.hasPassword = false;
+  }
+  if (profile.usernameChangedAt === undefined) {
+    if (profile.role === 'tcc') {
+      profile.usernameChangedAt = null;
+    } else if (profile.username === `user-${profile.id.slice(0, 8)}`) {
+      // Auto handle from Google / ensureProfile: allow one edit.
+      profile.usernameChangedAt = null;
+    } else {
+      // Email signup already chose a handle.
+      profile.usernameChangedAt = new Date(0).toISOString();
+    }
+  }
 }
 
 function requireCreatorBasics(profile: Profile) {

@@ -53,6 +53,9 @@ export class GlimpsesService {
   }
 
   async toggleLike(user: AuthUser, id: string) {
+    if (user.role !== 'traveler') {
+      throw new ForbiddenException('Travelers like shorts');
+    }
     this.requireGlimpse(id);
     let liked = false;
     await this.store.update((draft) => {

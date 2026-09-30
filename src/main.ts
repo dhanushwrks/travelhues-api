@@ -26,7 +26,7 @@ function loadEnvFile() {
 async function bootstrap() {
   loadEnvFile();
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  app.use(json({ limit: '8mb' }));
+  app.use(json({ limit: '12mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
   const store = app.get(StoreService);
   app.enableCors({
