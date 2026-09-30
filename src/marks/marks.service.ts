@@ -14,7 +14,7 @@ export class MarksService {
 
   library(userId: string) {
     const stories = this.published();
-    const marks = this.store.getMarks();
+    const marks = this.liveMarks();
     return {
       marks: marks
         .filter((mark) => mark.userId === userId)
@@ -35,7 +35,7 @@ export class MarksService {
       if (index >= 0) draft.contentMarks.splice(index, 1);
       else draft.contentMarks.push(mark);
     });
-    const marks = this.store.getMarks().filter((item) => sameTarget(item, mark));
+    const marks = this.liveMarks().filter((item) => sameTarget(item, mark));
     return {
       liked: marks.some((item) => item.userId === user.id && item.action === 'like'),
       saved: marks.some((item) => item.userId === user.id && item.action === 'save'),
@@ -89,9 +89,16 @@ export class MarksService {
     return [...totals.entries()].map(([key, likes]) => ({ key, likes }));
   }
 
+  private liveMarks() {
+    const gone = new Set(
+      this.store.getProfiles().filter((profile) => profile.deletedAt).map((profile) => profile.id),
+    );
+    return this.store.getMarks().filter((mark) => !gone.has(mark.userId));
+  }
+
   private published() {
     if (!this.store.getSettings().api.contentPublished) return [];
-    return this.store.getStories();
+    return this.store.getStories().filter((story) => !story.deletedAt);
   }
 }
 

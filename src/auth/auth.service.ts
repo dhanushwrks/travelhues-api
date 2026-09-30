@@ -47,6 +47,8 @@ export class AuthService {
         avatarUrl: '',
         coverUrl: '',
         hidden: false,
+        disabled: false,
+        deletedAt: null,
       });
     });
     return this.login({ email: input.email, password: input.password, intent: 'traveler' });
@@ -102,10 +104,33 @@ export class AuthService {
     if (input.intent === 'traveler' && user.role === 'tcc') {
       throw new ForbiddenException('This email is a creator account. Sign in as a creator.');
     }
+    await this.admit(user);
     return {
       accessToken: signedIn.data.session.access_token,
       user,
     };
+  }
+
+  async admit(user: AuthUser) {
+    const profile = this.store.getProfiles().find((item) => item.id === user.id);
+    if (!profile) return;
+    if (profile.deletedAt) {
+      throw new ForbiddenException('This account has been deleted');
+    }
+    if (!profile.disabled) return;
+    await this.store.update((draft) => {
+      const current = draft.profiles.find((item) => item.id === user.id);
+      if (current && !current.deletedAt) current.disabled = false;
+    });
+  }
+
+  assertActive(user: AuthUser) {
+    const profile = this.store.getProfiles().find((item) => item.id === user.id);
+    if (!profile) return;
+    if (profile.deletedAt) throw new UnauthorizedException('This account has been deleted');
+    if (profile.disabled) {
+      throw new UnauthorizedException('This account is disabled. Sign in to use it again.');
+    }
   }
 
   async verify(token: string): Promise<AuthUser> {
@@ -136,6 +161,14 @@ export class AuthService {
     });
     if (updated.error) {
       throw new BadRequestException(updated.error.message);
+    }
+  }
+
+  async checkPassword(email: string, password: string) {
+    const client = this.publishableClient();
+    const signedIn = await client.auth.signInWithPassword({ email, password });
+    if (signedIn.error || !signedIn.data.session) {
+      throw new UnauthorizedException('Current password is not right');
     }
   }
 

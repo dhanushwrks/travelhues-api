@@ -13,6 +13,7 @@ export type Spot = {
   avgCostThb: number;
   tags: string[];
   archived?: boolean;
+  deletedAt?: string | null;
 };
 
 export type NoteBlock = {
@@ -40,6 +41,7 @@ export type Itinerary = {
   coverUrl: string;
   days: Day[];
   archived?: boolean;
+  deletedAt?: string | null;
 };
 
 export type Creator = {
@@ -62,6 +64,7 @@ export type StoryBlog = {
   body: string;
   coverUrl: string;
   archived?: boolean;
+  deletedAt?: string | null;
 };
 
 export type Story = {
@@ -75,6 +78,7 @@ export type Story = {
   spots: Spot[];
   itineraries: Itinerary[];
   blogs: StoryBlog[];
+  deletedAt?: string | null;
 };
 
 export type ItineraryDetail = {

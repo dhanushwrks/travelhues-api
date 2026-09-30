@@ -20,6 +20,7 @@ export class UserGuard implements CanActivate {
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     if (!token) throw new UnauthorizedException('Sign in to continue');
     request.user = await this.auth.verify(token);
+    this.auth.assertActive(request.user);
     return true;
   }
 }

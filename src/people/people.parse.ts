@@ -51,13 +51,23 @@ export function parseProfilePatch(body: unknown) {
     }
     patch.hidden = record.hidden;
   }
-  if ('avatarDataUrl' in record) patch.avatarDataUrl = optionalDataUrl(record.avatarDataUrl);
-  if ('coverDataUrl' in record) patch.coverDataUrl = optionalDataUrl(record.coverDataUrl);
+  if ('avatarDataUrl' in record) patch.avatarDataUrl = photoPatch(record.avatarDataUrl);
+  if ('coverDataUrl' in record) patch.coverDataUrl = photoPatch(record.coverDataUrl);
   return patch;
 }
 
-export function parsePassword(body: unknown) {
-  return asPassword(asRecord(body).password);
+export function parsePasswordChange(body: unknown) {
+  const record = asRecord(body);
+  const currentPassword = asPassword(record.currentPassword, 'Current password');
+  const password = asPassword(record.password, 'New password');
+  const confirmPassword = typeof record.confirmPassword === 'string' ? record.confirmPassword : '';
+  if (confirmPassword !== password) {
+    throw new BadRequestException('New password and confirmation do not match');
+  }
+  if (password === currentPassword) {
+    throw new BadRequestException('Choose a password that is different from the current one');
+  }
+  return { currentPassword, password };
 }
 
 function parseProfileFields(
@@ -200,12 +210,17 @@ function asEmail(value: unknown) {
   return email;
 }
 
-function asPassword(value: unknown) {
+function asPassword(value: unknown, label = 'Password') {
   if (typeof value !== 'string' || value.length < 6) {
-    throw new BadRequestException('Password must be at least 6 characters');
+    throw new BadRequestException(`${label} must be at least 6 characters`);
   }
   if (value.length > 72) throw new BadRequestException('Password is too long');
   return value;
+}
+
+function photoPatch(value: unknown) {
+  if (value == null || value === '') return '';
+  return optionalDataUrl(value) ?? '';
 }
 
 function optionalDataUrl(value: unknown) {
@@ -213,6 +228,6 @@ function optionalDataUrl(value: unknown) {
   if (typeof value !== 'string' || !value.startsWith('data:image/')) {
     throw new BadRequestException('Photo must be an image');
   }
-  if (value.length > 1_800_000) throw new BadRequestException('Photo must be under 1 MB');
+  if (value.length > 2_800_000) throw new BadRequestException('Photo must be under 2 MB');
   return value;
 }

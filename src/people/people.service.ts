@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   GoneException,
   Injectable,
   NotFoundException,
@@ -14,7 +15,7 @@ import { publicStory } from '../content/public-story.js';
 import { StoreService } from '../store/store.service.js';
 import {
   parseInviteAccount,
-  parsePassword,
+  parsePasswordChange,
   parseProfilePatch,
   parseWaitlist,
 } from './people.parse.js';
@@ -212,6 +213,9 @@ export class PeopleService {
       const profile = draft.profiles.find((item) => item.id === user.id);
       if (!profile) throw new NotFoundException('Profile was not found');
       if (patch.username && patch.username !== profile.username) {
+        if (profile.role !== 'tcc') {
+          throw new BadRequestException('Username cannot be changed');
+        }
         if (handleTaken(draft, patch.username, profile.id)) {
           throw new ConflictException('That handle is already in use');
         }
@@ -228,8 +232,10 @@ export class PeopleService {
       }
       if (patch.socials !== undefined) profile.socials = patch.socials;
       if (patch.hidden !== undefined) profile.hidden = patch.hidden;
-      if (avatarUrl !== undefined) profile.avatarUrl = avatarUrl;
-      if (coverUrl !== undefined) profile.coverUrl = coverUrl;
+      if (patch.avatarDataUrl === '') profile.avatarUrl = '';
+      else if (avatarUrl !== undefined) profile.avatarUrl = avatarUrl;
+      if (patch.coverDataUrl === '') profile.coverUrl = '';
+      else if (coverUrl !== undefined) profile.coverUrl = coverUrl;
       if (profile.role === 'tcc') requireCreatorBasics(profile);
       next = structuredClone(profile);
     });
@@ -239,15 +245,42 @@ export class PeopleService {
   }
 
   async changePassword(user: AuthUser, body: unknown) {
-    await this.auth.updatePassword(user.id, parsePassword(body));
+    const input = parsePasswordChange(body);
+    await this.auth.checkPassword(user.email, input.currentPassword);
+    await this.auth.updatePassword(user.id, input.password);
     return { updated: true };
   }
 
-  async deleteMe(user: AuthUser) {
-    await this.auth.deleteAccount(user.id);
+  async disableMe(user: AuthUser) {
     await this.store.update((draft) => {
-      draft.profiles = draft.profiles.filter((item) => item.id !== user.id);
-      draft.contentMarks = draft.contentMarks.filter((item) => item.userId !== user.id);
+      const profile = draft.profiles.find((item) => item.id === user.id);
+      if (!profile) throw new NotFoundException('Profile was not found');
+      if (profile.deletedAt) throw new ForbiddenException('This account has been deleted');
+      profile.disabled = true;
+    });
+    return { disabled: true };
+  }
+
+  async deleteMe(user: AuthUser) {
+    const deletedAt = new Date().toISOString();
+    await this.store.update((draft) => {
+      const profile = draft.profiles.find((item) => item.id === user.id);
+      if (!profile) throw new NotFoundException('Profile was not found');
+      profile.deletedAt = deletedAt;
+      profile.disabled = false;
+      for (const story of draft.stories) {
+        const owned = story.ownerId === user.id || story.creator.username === profile.username;
+        if (!owned) continue;
+        story.deletedAt = deletedAt;
+        for (const spot of story.spots) spot.deletedAt = deletedAt;
+        for (const blog of story.blogs ?? []) blog.deletedAt = deletedAt;
+        for (const plan of story.itineraries) plan.deletedAt = deletedAt;
+      }
+      for (const glimpse of draft.glimpses) {
+        if (glimpse.creatorId === user.id || glimpse.username === profile.username) {
+          glimpse.deletedAt = deletedAt;
+        }
+      }
     });
   }
 
@@ -255,6 +288,7 @@ export class PeopleService {
     const profile = this.store.getProfiles().find((item) => item.username === username);
     if (profile) {
       if (profile.role !== 'tcc') throw new NotFoundException('Profile was not found');
+      if (profile.deletedAt || profile.disabled) throw new NotFoundException('Profile was not found');
       if (profile.hidden && profile.id !== viewer.id) {
         throw new NotFoundException('Profile was not found');
       }
@@ -280,6 +314,8 @@ export class PeopleService {
         avatarUrl: story.creator.avatarUrl,
         coverUrl: story.coverUrl,
         hidden: false,
+        disabled: false,
+        deletedAt: null,
       },
       false,
     );
@@ -320,7 +356,8 @@ export class PeopleService {
       .getStories()
       .filter(
         (story) =>
-          story.creator.username === username || (id !== undefined && id !== '' && story.ownerId === id),
+          !story.deletedAt &&
+          (story.creator.username === username || (id !== undefined && id !== '' && story.ownerId === id)),
       );
   }
 
@@ -383,6 +420,8 @@ function blankProfile(user: AuthUser): Profile {
     avatarUrl: '',
     coverUrl: '',
     hidden: false,
+    disabled: false,
+    deletedAt: null,
   };
 }
 
@@ -409,6 +448,8 @@ function profileFromDraft(
     avatarUrl: images.avatarUrl,
     coverUrl: images.coverUrl,
     hidden: false,
+    disabled: false,
+    deletedAt: null,
   };
 }
 

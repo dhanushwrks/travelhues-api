@@ -288,11 +288,11 @@ export class StoreService implements OnModuleInit {
     const result = await this.supabase.from('stories').select(`
       slug, owner_id, title, summary, cover_url,
       destination_name, destination_country, destination_lat, destination_lng,
-      creator_username, creator_display_name, creator_bio, creator_avatar_url,
-      spots (id, type, title, description, images, lat, lng, address, avg_minutes, avg_cost_thb, tags, archived, position),
-      story_blogs (slug, title, body, cover_url, archived, position),
+      creator_username, creator_display_name, creator_bio, creator_avatar_url, deleted_at,
+      spots (id, type, title, description, images, lat, lng, address, avg_minutes, avg_cost_thb, tags, archived, deleted_at, position),
+      story_blogs (slug, title, body, cover_url, archived, deleted_at, position),
       itineraries (
-        slug, title, summary, cover_url, archived, position,
+        slug, title, summary, cover_url, archived, deleted_at, position,
         itinerary_days (
           position, title,
           itinerary_blocks (position, kind, body, spot_id)
@@ -442,6 +442,7 @@ type ItineraryRow = {
   summary: string;
   cover_url: string;
   archived?: boolean | null;
+  deleted_at?: string | null;
   position: number;
   itinerary_days: DayRow[] | null;
 };
@@ -459,6 +460,7 @@ type SpotRow = {
   avg_cost_thb: number;
   tags: string[] | null;
   archived?: boolean | null;
+  deleted_at?: string | null;
   position: number;
 };
 
@@ -476,6 +478,7 @@ type StoryRow = {
   creator_display_name: string;
   creator_bio: string;
   creator_avatar_url: string;
+  deleted_at?: string | null;
   spots: SpotRow[] | null;
   itineraries: ItineraryRow[] | null;
   story_blogs: BlogRow[] | null;
@@ -487,6 +490,7 @@ type BlogRow = {
   body: string;
   cover_url?: string | null;
   archived?: boolean | null;
+  deleted_at?: string | null;
   position: number;
 };
 
@@ -557,7 +561,9 @@ function mapStory(row: StoryRow): Story {
       body: blog.body,
       coverUrl: blog.cover_url ?? '',
       archived: blog.archived ?? false,
+      deletedAt: rowTime(blog.deleted_at),
     })),
+    deletedAt: rowTime(row.deleted_at),
   };
 }
 
@@ -575,6 +581,7 @@ function mapSpot(row: SpotRow): Spot {
     avgCostThb: row.avg_cost_thb,
     tags: row.tags ?? [],
     archived: row.archived ?? false,
+    deletedAt: rowTime(row.deleted_at),
   };
 }
 
@@ -585,6 +592,7 @@ function mapItinerary(row: ItineraryRow): Itinerary {
     summary: row.summary,
     coverUrl: row.cover_url,
     archived: row.archived ?? false,
+    deletedAt: rowTime(row.deleted_at),
     days: byPosition(row.itinerary_days ?? []).map((day) => ({
       title: day.title,
       blocks: byPosition(day.itinerary_blocks ?? []).map(mapBlock),
@@ -623,6 +631,8 @@ type ProfileRow = {
   avatar_url: string | null;
   cover_url: string | null;
   hidden: boolean | null;
+  disabled?: boolean | null;
+  deleted_at?: string | null;
 };
 
 type WaitlistRow = {
@@ -663,6 +673,7 @@ type GlimpseRow = {
   link_itinerary_slug: string | null;
   link_spot_id: string | null;
   link_label: string | null;
+  deleted_at?: string | null;
 };
 
 type LikeRow = { glimpse_id: string; user_id: string };
@@ -701,6 +712,8 @@ function mapProfile(row: ProfileRow): Profile {
     avatarUrl: row.avatar_url ?? '',
     coverUrl: row.cover_url ?? '',
     hidden: row.hidden ?? false,
+    disabled: row.disabled ?? false,
+    deletedAt: rowTime(row.deleted_at),
   };
 }
 
@@ -751,7 +764,12 @@ function mapGlimpse(row: GlimpseRow): Glimpse {
           label: row.link_label ?? '',
         }
       : null,
+    deletedAt: rowTime(row.deleted_at),
   };
+}
+
+function rowTime(value: string | null | undefined) {
+  return value ? value : null;
 }
 
 function mapComment(row: CommentRow): GlimpseComment {

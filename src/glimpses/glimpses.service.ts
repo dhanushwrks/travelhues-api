@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.user.js';
 import { isCountryCode } from '../people/countries.js';
+import { quietAccounts } from '../content/public-story.js';
 import { StoreService } from '../store/store.service.js';
 import type { Glimpse, GlimpseComment, GlimpseLink } from './glimpses.types.js';
 
@@ -17,14 +18,17 @@ export class GlimpsesService {
   list(viewerId: string, country?: string) {
     if (!this.store.getSettings().api.contentPublished) return [];
     const code = country ? country.toUpperCase() : '';
+    const quiet = quietAccounts(this.store.getProfiles());
     return this.store
       .getGlimpses()
+      .filter((glimpse) => !glimpse.deletedAt)
+      .filter((glimpse) => !quiet.ids.has(glimpse.creatorId) && !quiet.names.has(glimpse.username))
       .filter((glimpse) => !code || glimpse.country === code)
       .map((glimpse) => this.present(glimpse, viewerId));
   }
 
   async create(user: AuthUser, body: unknown) {
-    if (user.role !== 'tcc') throw new ForbiddenException('Only a creator can add a glimpse');
+    if (user.role !== 'tcc') throw new ForbiddenException('Only a creator can add a short');
     const input = parseGlimpse(body);
     this.assertCountry(input.country);
     const link = this.resolveLink(user, input.link);
@@ -72,7 +76,7 @@ export class GlimpsesService {
   async remove(user: AuthUser, id: string) {
     const glimpse = this.requireGlimpse(id);
     if (glimpse.creatorId !== user.id) {
-      throw new ForbiddenException('You can remove a glimpse you posted');
+      throw new ForbiddenException('You can remove a short you posted');
     }
     await this.store.update((draft) => {
       draft.glimpses = draft.glimpses.filter((item) => item.id !== id);
@@ -114,14 +118,14 @@ export class GlimpsesService {
 
   private requireGlimpse(id: string) {
     const glimpse = this.store.getGlimpses().find((item) => item.id === id);
-    if (!glimpse) throw new NotFoundException('That glimpse was not found');
+    if (!glimpse) throw new NotFoundException('That short was not found');
     return glimpse;
   }
 
   private assertCountry(code: string) {
     const enabled = this.store.getSettings().app.enabledCountries ?? [];
     if (!enabled.includes(code)) {
-      throw new BadRequestException('That country is not open for glimpses');
+      throw new BadRequestException('That country is not open for shorts');
     }
   }
 

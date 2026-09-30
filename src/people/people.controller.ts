@@ -85,7 +85,8 @@ export class PeopleController {
     }
     const user = await this.auth.verify(token);
     await this.people.ensureProfile(user);
-    return { accessToken: token, user: await this.auth.verify(token) };
+    await this.auth.admit(user);
+    return { accessToken: token, user };
   }
 
   @Get('me')
@@ -105,6 +106,12 @@ export class PeopleController {
   @UseGuards(UserGuard)
   password(@Req() request: AuthedRequest, @Body() body: unknown) {
     return this.people.changePassword(request.user, body);
+  }
+
+  @Post('me/disable')
+  @UseGuards(UserGuard)
+  disable(@Req() request: AuthedRequest) {
+    return this.people.disableMe(request.user);
   }
 
   @Delete('me')

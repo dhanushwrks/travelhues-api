@@ -30,6 +30,8 @@ export type Profile = {
   avatarUrl: string;
   coverUrl: string;
   hidden: boolean;
+  disabled: boolean;
+  deletedAt: string | null;
 };
 
 export type WaitlistStatus = 'pending' | 'accepted' | 'declined';

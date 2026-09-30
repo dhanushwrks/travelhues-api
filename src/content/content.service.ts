@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { StoreService } from '../store/store.service.js';
 import type { PublicSettings } from '../store/store.types.js';
 import type { CreatorProfile, ItineraryDetail, Story } from './content.types.js';
-import { publicStory } from './public-story.js';
+import { publicStory, quietAccounts, storyIsPublic } from './public-story.js';
 
 @Injectable()
 export class ContentService {
@@ -54,6 +54,10 @@ export class ContentService {
 
   private publishedStories() {
     if (!this.store.getSettings().api.contentPublished) return [];
-    return this.store.getStories().map(publicStory);
+    const quiet = quietAccounts(this.store.getProfiles());
+    return this.store
+      .getStories()
+      .filter((story) => storyIsPublic(story, quiet))
+      .map(publicStory);
   }
 }

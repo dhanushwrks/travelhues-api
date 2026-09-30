@@ -30,9 +30,16 @@ ZA ZM ZW
 
 const names = new Intl.DisplayNames(['en'], { type: 'region' });
 
+export function countryFlag(code: string) {
+  if (!/^[A-Za-z]{2}$/.test(code)) return '';
+  return [...code.toUpperCase()]
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join('');
+}
+
 export function listCountries() {
   return countryCodes
-    .map((code) => ({ code, name: names.of(code) ?? code }))
+    .map((code) => ({ code, name: names.of(code) ?? code, flag: countryFlag(code) }))
     .filter((country) => country.name !== country.code)
     .sort((left, right) => left.name.localeCompare(right.name));
 }

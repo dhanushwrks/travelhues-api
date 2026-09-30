@@ -18,6 +18,7 @@ export type Glimpse = {
   country: string;
   createdAt: string;
   link: GlimpseLink | null;
+  deletedAt?: string | null;
 };
 
 export type GlimpseLike = {

@@ -57,11 +57,14 @@ export class AdminService {
   }
 
   storiesFor(user: { id: string; username: string }) {
-    return this.store.getStories().filter((story) => this.owns(story, user));
+    return this.store
+      .getStories()
+      .filter((story) => !story.deletedAt && this.owns(story, user));
   }
 
   requireOwned(user: { id: string; username: string }, slug: string) {
     const story = this.requireStory(slug);
+    if (story.deletedAt) throw new NotFoundException('That story was not found');
     if (!this.owns(story, user)) {
       throw new ForbiddenException('That story belongs to another creator');
     }
