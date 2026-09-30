@@ -2,7 +2,6 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { thailand } from '../content/thailand.js';
 import type { Block, Itinerary, Spot, Story } from '../content/content.types.js';
 import type { Glimpse, GlimpseComment, GlimpseLike } from '../glimpses/glimpses.types.js';
 import type { ContentMark } from '../marks/marks.types.js';
@@ -167,7 +166,7 @@ export class StoreService implements OnModuleInit {
           ? error.code
           : undefined;
       if (code !== 'ENOENT') throw error;
-      this.data = blankStore(defaultSettings(), structuredClone([thailand]));
+      this.data = blankStore(defaultSettings(), []);
       await this.persist();
     }
   }
@@ -197,7 +196,7 @@ export class StoreService implements OnModuleInit {
     }
     this.databaseReady = true;
     if (!settingsResult.data) {
-      this.data = blankStore(defaultSettings(), structuredClone([thailand]));
+      this.data = blankStore(defaultSettings(), []);
       await this.persistDatabase();
       await this.loadPeopleFile();
       await this.loadCommunity();
