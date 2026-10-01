@@ -348,7 +348,7 @@ export class StoreService implements OnModuleInit {
       itineraries (
         slug, title, summary, cover_url, archived, deleted_at, reservations, purchase_only, price_inr, position,
         itinerary_days (
-          position, title,
+          position, title, brief,
           itinerary_blocks (position, kind, body, spot_id, commute)
         )
       )
@@ -648,6 +648,7 @@ type BlockRow = {
 type DayRow = {
   position: number;
   title: string;
+  brief?: string | null;
   itinerary_blocks: BlockRow[] | null;
 };
 
@@ -842,6 +843,7 @@ function mapItinerary(row: ItineraryRow): Itinerary {
     reservations: mapReservations(row.reservations),
     days: byPosition(row.itinerary_days ?? []).map((day) => ({
       title: day.title,
+      ...(day.brief?.trim() ? { brief: day.brief.trim() } : {}),
       blocks: byPosition(day.itinerary_blocks ?? []).map(mapBlock),
     })),
   };
