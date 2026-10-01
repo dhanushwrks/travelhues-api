@@ -79,10 +79,11 @@ export class MarksService {
   }
 
   private counts(marks: ContentMark[], stories: ReturnType<MarksService['published']>) {
+    const live = new Set(stories.map((story) => story.slug));
     const totals = new Map<string, number>();
     for (const mark of marks) {
       if (mark.action !== 'like') continue;
-      if (!stories.some((story) => story.slug === mark.storySlug)) continue;
+      if (!live.has(mark.storySlug)) continue;
       const key = markKey(mark);
       totals.set(key, (totals.get(key) ?? 0) + 1);
     }

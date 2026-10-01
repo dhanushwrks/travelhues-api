@@ -169,6 +169,21 @@ export class ContentController {
     return this.content.getItinerary(slug, itinerarySlug);
   }
 
+  @Get('destinations')
+  listDestinations(@Query('country') country = '', @Query('limit') limit = '') {
+    return this.content.listDestinations({ country, limit });
+  }
+
+  @Get('creators')
+  listCreators(
+    @Query('q') q = '',
+    @Query('country') country = '',
+    @Query('page') page = '',
+    @Query('limit') limit = '',
+  ) {
+    return this.content.listCreators({ q, country, page, limit });
+  }
+
   @Get('creators/:username')
   getCreator(@Param('username') username: string) {
     return this.content.getCreator(username);

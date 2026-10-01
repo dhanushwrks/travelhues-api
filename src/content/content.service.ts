@@ -4,6 +4,7 @@ import type { PublicSettings } from '../store/store.types.js';
 import type { CreatorProfile, ItineraryDetail, Story } from './content.types.js';
 import { isPersonalTrip, personalAccounts, publicStory, quietAccounts, storyIsPublic } from './public-story.js';
 import { searchCatalog, type SearchPage } from './search.js';
+import { listCreatorsCatalog, type CreatorsPage } from './creators-list.js';
 
 @Injectable()
 export class ContentService {
@@ -72,6 +73,40 @@ export class ContentService {
     );
   }
 
+  listCreators(query: {
+    q?: string;
+    country?: string;
+    page?: string;
+    limit?: string;
+  }): CreatorsPage {
+    return listCreatorsCatalog(query, this.publishedStories(), this.store.getProfiles(), this.likeCounts());
+  }
+
+  listDestinations(query: { country?: string; limit?: string }): Story[] {
+    const country = (query.country ?? '').trim();
+    const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit ?? '10', 10) || 10));
+    const likes = this.storyLikeTotals();
+    return this.publishedStories()
+      .filter((story) => story.itineraries.some((plan) => !plan.archived))
+      .filter((story) => matchesDestinationCountry(story.destination.country, country))
+      .sort((left, right) => {
+        const likeDelta = (likes.get(right.slug) ?? 0) - (likes.get(left.slug) ?? 0);
+        if (likeDelta !== 0) return likeDelta;
+        return left.title.localeCompare(right.title);
+      })
+      .slice(0, limit);
+  }
+
+  private storyLikeTotals() {
+    const totals = new Map<string, number>();
+    for (const mark of this.store.getMarks()) {
+      if (mark.action !== 'like') continue;
+      if (!mark.storySlug) continue;
+      totals.set(mark.storySlug, (totals.get(mark.storySlug) ?? 0) + 1);
+    }
+    return totals;
+  }
+
   private likeCounts() {
     const totals = new Map<string, number>();
     for (const mark of this.store.getMarks()) {
@@ -119,4 +154,11 @@ function withLiveCreator(story: Story, profile: { username: string; displayName:
       avatarUrl: profile.avatarUrl,
     },
   };
+}
+
+function matchesDestinationCountry(stored: string, selected: string) {
+  if (!selected) return true;
+  const code = selected.toUpperCase();
+  const value = stored.trim();
+  return value.toUpperCase() === code || value.toLowerCase() === selected.toLowerCase();
 }
