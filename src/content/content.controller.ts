@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { AdminService } from '../admin/admin.service.js';
+import { OptionalUserGuard, type MaybeAuthedRequest } from '../auth/optional-user.guard.js';
 import { TccGuard } from '../auth/tcc.guard.js';
 import { UserGuard, type AuthedRequest } from '../auth/user.guard.js';
 import { ContentService } from './content.service.js';
@@ -162,22 +163,25 @@ export class ContentController {
   }
 
   @Get('stories')
-  getStories() {
-    return this.content.getStories();
+  @UseGuards(OptionalUserGuard)
+  getStories(@Req() request: MaybeAuthedRequest) {
+    return this.content.getStories(request.user?.id);
   }
 
   @Get('stories/:slug')
-  getStory(@Param('slug') slug: string) {
-    return this.content.getStory(slug);
+  @UseGuards(OptionalUserGuard)
+  getStory(@Req() request: MaybeAuthedRequest, @Param('slug') slug: string) {
+    return this.content.getStory(slug, request.user?.id);
   }
 
   @Get('stories/:slug/itineraries/:itinerarySlug')
   @UseGuards(UserGuard)
   getItinerary(
+    @Req() request: AuthedRequest,
     @Param('slug') slug: string,
     @Param('itinerarySlug') itinerarySlug: string,
   ) {
-    return this.content.getItinerary(slug, itinerarySlug);
+    return this.content.getItinerary(slug, itinerarySlug, request.user.id);
   }
 
   @Get('destinations')
@@ -196,8 +200,9 @@ export class ContentController {
   }
 
   @Get('creators/:username')
-  getCreator(@Param('username') username: string) {
-    return this.content.getCreator(username);
+  @UseGuards(OptionalUserGuard)
+  getCreator(@Req() request: MaybeAuthedRequest, @Param('username') username: string) {
+    return this.content.getCreator(username, request.user?.id);
   }
 }
 

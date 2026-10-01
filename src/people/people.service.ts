@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.user.js';
 import { AuthService } from '../auth/auth.service.js';
-import { publicStory } from '../content/public-story.js';
+import { publicStory, entitlementSet } from '../content/public-story.js';
 import { StoreService } from '../store/store.service.js';
 import {
   parseInviteAccount,
@@ -210,7 +210,7 @@ export class PeopleService {
         if (current) current.hasPassword = hasPassword;
       });
     }
-    return this.present({ ...profile, hasPassword }, true);
+    return this.present({ ...profile, hasPassword }, true, user.id);
   }
 
   async updateMe(user: AuthUser, body: unknown) {
@@ -277,7 +277,7 @@ export class PeopleService {
     });
     if (!next) throw new NotFoundException('Profile was not found');
     await this.auth.syncProfile(user.id, next.username, next.displayName);
-    return this.present(next, true);
+    return this.present(next, true, user.id);
   }
 
   async changePassword(user: AuthUser, body: unknown) {
@@ -367,7 +367,7 @@ export class PeopleService {
       if (profile.hidden && profile.id !== viewer?.id) {
         throw new NotFoundException('Profile was not found');
       }
-      return this.present(profile, Boolean(viewer && profile.id === viewer.id));
+      return this.present(profile, Boolean(viewer && profile.id === viewer.id), viewer?.id);
     }
     const stories = this.storiesFor(username, undefined);
     const story = stories[0];
@@ -396,14 +396,29 @@ export class PeopleService {
         usernameChangedAt: null,
       },
       false,
+      viewer?.id,
     );
   }
 
-  private present(profile: Profile, includePrivate: boolean) {
+  private present(profile: Profile, includePrivate: boolean, viewerId?: string) {
     const stories = this.storiesFor(profile.username, profile.id).filter(
       (story) => includePrivate || !story.archived,
     );
-    const visible = stories.map((story) => publicStory(story));
+    const entitlements = viewerId
+      ? entitlementSet(
+          this.store
+            .getPurchases()
+            .filter((item) => item.buyerId === viewerId)
+            .map((item) => ({
+              storySlug: item.storySlug,
+              kind: item.kind,
+              itemId: item.itemId,
+            })),
+        )
+      : new Set<string>();
+    const visible = stories.map((story) =>
+      publicStory(story, { viewerId, entitlements }),
+    );
     const spots = visible.reduce((total, story) => total + story.spots.length, 0);
     const itineraries = visible.reduce((total, story) => total + story.itineraries.length, 0);
     const normalized = normalizeProfile(profile);

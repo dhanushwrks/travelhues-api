@@ -7,9 +7,18 @@ import { ContentModule } from './content/content.module.js';
 import { GlimpsesModule } from './glimpses/glimpses.module.js';
 import { MarksModule } from './marks/marks.module.js';
 import { PeopleModule } from './people/people.module.js';
+import { PurchasesModule } from './purchases/purchases.module.js';
 
 @Module({
-  imports: [AuthModule, ContentModule, AdminModule, PeopleModule, GlimpsesModule, MarksModule],
+  imports: [
+    AuthModule,
+    ContentModule,
+    AdminModule,
+    PeopleModule,
+    GlimpsesModule,
+    MarksModule,
+    PurchasesModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

@@ -202,6 +202,7 @@ export class AdminService {
       body: asText(record.body, 'Body'),
       coverUrl: optionalCover(record.coverUrl),
       archived: false,
+      ...parsePurchaseAccess(record),
     };
     if ((story.blogs ?? []).some((item) => item.slug === blog.slug)) {
       throw new ConflictException(`Blog ${blog.slug} already exists`);
@@ -225,6 +226,7 @@ export class AdminService {
       title: asText(record.title, 'Title'),
       body: asText(record.body, 'Body'),
       coverUrl: optionalCover(record.coverUrl),
+      ...parsePurchaseAccess(record),
     };
     await this.store.update((draft) => {
       const current = draft.stories.find((item) => item.slug === storySlug);
@@ -244,9 +246,12 @@ export class AdminService {
       throw new NotFoundException(`Spot ${spotId} was not found`);
     }
     const previous = story.spots.find((item) => item.id === spotId);
+    const parsed = parseSpot(body, spotId, this.store.getCatalog());
     const spot = {
-      ...parseSpot(body, spotId, this.store.getCatalog()),
+      ...parsed,
       archived: previous?.archived ?? false,
+      purchaseOnly: parsed.purchaseOnly ?? previous?.purchaseOnly ?? false,
+      priceInr: parsed.priceInr ?? previous?.priceInr ?? 99,
     };
     await this.store.update((draft) => {
       const current = draft.stories.find((item) => item.slug === storySlug);
@@ -310,9 +315,12 @@ export class AdminService {
       throw new NotFoundException(`Itinerary ${itinerarySlug} was not found`);
     }
     const previous = story.itineraries.find((item) => item.slug === itinerarySlug);
+    const parsed = parseItinerary(body, story.spots, itinerarySlug);
     const itinerary = {
-      ...parseItinerary(body, story.spots, itinerarySlug),
+      ...parsed,
       archived: previous?.archived ?? false,
+      purchaseOnly: parsed.purchaseOnly ?? previous?.purchaseOnly ?? false,
+      priceInr: parsed.priceInr ?? previous?.priceInr ?? 99,
     };
     await this.store.update((draft) => {
       const current = draft.stories.find((item) => item.slug === storySlug);
@@ -520,6 +528,7 @@ function parseSpot(body: unknown, id: string | undefined, catalog: SpotCatalogIt
     avgCostThb: asNonNegative(record.avgCostThb, 'Cost'),
     tags,
     archived: false,
+    ...parsePurchaseAccess(record),
   };
 }
 
@@ -573,6 +582,7 @@ function parseItinerary(
     days: days.map((day, index) => parseDay(day, index, spotIds)),
     reservations: parseReservations(record.reservations, days.length, spotIds),
     archived: false,
+    ...parsePurchaseAccess(record),
   };
 }
 
@@ -848,4 +858,18 @@ function asNonNegative(value: unknown, label: string) {
     throw new BadRequestException(`${label} must be zero or more`);
   }
   return value;
+}
+
+function parsePurchaseAccess(record: Record<string, unknown>) {
+  const purchaseOnly =
+    record.purchaseOnly === undefined ? false : asBoolean(record.purchaseOnly, 'Purchase only');
+  const priceRaw = record.priceInr;
+  const priceInr =
+    priceRaw === undefined || priceRaw === null || priceRaw === ''
+      ? 99
+      : Math.floor(asNonNegative(Number(priceRaw), 'Price'));
+  if (purchaseOnly && priceInr < 1) {
+    throw new BadRequestException('Purchase-only items need a price of at least ₹1');
+  }
+  return { purchaseOnly, priceInr };
 }

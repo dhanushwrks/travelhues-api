@@ -5,6 +5,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Block, CommuteLeg, Itinerary, Spot, Story } from '../content/content.types.js';
 import type { Glimpse, GlimpseComment, GlimpseLike } from '../glimpses/glimpses.types.js';
 import type { ContentMark } from '../marks/marks.types.js';
+import type { ContentPurchase } from '../purchases/purchases.types.js';
 import type { CreatorInvite, Profile, WaitlistRequest } from '../people/people.types.js';
 import type { Settings } from './store.types.js';
 import { seedSpotCatalog, type SpotCatalogItem } from '../content/spot-catalog.js';
@@ -19,6 +20,7 @@ type StoreFile = {
   glimpseLikes: GlimpseLike[];
   glimpseComments: GlimpseComment[];
   contentMarks: ContentMark[];
+  contentPurchases: ContentPurchase[];
 };
 
 export const brandLinkDefaults = {
@@ -100,6 +102,49 @@ export class StoreService implements OnModuleInit {
     return structuredClone(this.data.contentMarks);
   }
 
+  getPurchases(): ContentPurchase[] {
+    return structuredClone(this.data.contentPurchases);
+  }
+
+  async recordPurchase(purchase: ContentPurchase): Promise<ContentPurchase> {
+    await this.ready;
+    const run = this.queue.then(async () => {
+      const existing = this.data.contentPurchases.find(
+        (item) =>
+          item.buyerId === purchase.buyerId &&
+          item.storySlug === purchase.storySlug &&
+          item.kind === purchase.kind &&
+          item.itemId === purchase.itemId,
+      );
+      if (existing) return existing;
+      if (this.supabase) {
+        const result = await this.supabase.from('content_purchases').upsert(
+          {
+            id: purchase.id,
+            buyer_id: purchase.buyerId,
+            story_slug: purchase.storySlug,
+            kind: purchase.kind,
+            item_id: purchase.itemId,
+            price_inr: purchase.priceInr,
+            created_at: purchase.createdAt,
+          },
+          { onConflict: 'buyer_id,story_slug,kind,item_id' },
+        );
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+      this.data.contentPurchases.push(purchase);
+      if (!this.usesDatabase()) await this.persistFile();
+      return purchase;
+    });
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   getCatalog(): SpotCatalogItem[] {
     return structuredClone(this.catalog);
   }
@@ -168,6 +213,7 @@ export class StoreService implements OnModuleInit {
         glimpseLikes: parsed.glimpseLikes ?? [],
         glimpseComments: parsed.glimpseComments ?? [],
         contentMarks: parsed.contentMarks ?? [],
+        contentPurchases: parsed.contentPurchases ?? [],
       };
     } catch (error) {
       const code =
@@ -297,10 +343,10 @@ export class StoreService implements OnModuleInit {
       slug, owner_id, title, summary, cover_url,
       destination_name, destination_country, destination_lat, destination_lng,
       creator_username, creator_display_name, creator_bio, creator_avatar_url, archived, deleted_at,
-      spots (id, type, title, description, images, lat, lng, address, avg_minutes, avg_cost_thb, tags, archived, deleted_at, position),
-      story_blogs (slug, title, body, cover_url, archived, deleted_at, position),
+      spots (id, type, title, description, images, lat, lng, address, avg_minutes, avg_cost_thb, tags, archived, deleted_at, purchase_only, price_inr, position),
+      story_blogs (slug, title, body, cover_url, archived, deleted_at, purchase_only, price_inr, position),
       itineraries (
-        slug, title, summary, cover_url, archived, deleted_at, reservations, position,
+        slug, title, summary, cover_url, archived, deleted_at, reservations, purchase_only, price_inr, position,
         itinerary_days (
           position, title,
           itinerary_blocks (position, kind, body, spot_id, commute)
@@ -321,19 +367,23 @@ export class StoreService implements OnModuleInit {
     if ((profiles.data ?? []).length > 0) {
       this.data.profiles = (profiles.data ?? []).map((row) => mapProfile(row as ProfileRow));
     }
-    const [waitlist, invites, glimpses, likes, comments, marks] = await Promise.all([
+    const [waitlist, invites, glimpses, likes, comments, marks, purchases] = await Promise.all([
       this.supabase.from('waitlist').select('*'),
       this.supabase.from('creator_invites').select('*'),
       this.supabase.from('glimpses').select('*'),
       this.supabase.from('glimpse_likes').select('*'),
       this.supabase.from('glimpse_comments').select('*'),
       this.supabase.from('content_marks').select('*'),
+      this.supabase.from('content_purchases').select('*'),
     ]);
     for (const result of [waitlist, invites, glimpses, likes, comments, marks]) {
       if (result.error) {
         if (isMissingSchema(result.error.message)) return;
         throw new Error(result.error.message);
       }
+    }
+    if (purchases.error && !isMissingSchema(purchases.error.message)) {
+      throw new Error(purchases.error.message);
     }
     if ((waitlist.data ?? []).length > 0) {
       this.data.waitlist = (waitlist.data ?? []).map((row) => mapWaitlist(row as WaitlistRow));
@@ -355,6 +405,11 @@ export class StoreService implements OnModuleInit {
     }
     if ((marks.data ?? []).length > 0) {
       this.data.contentMarks = (marks.data ?? []).map((row) => mapMark(row as MarkRow));
+    }
+    if (!purchases.error && (purchases.data ?? []).length > 0) {
+      this.data.contentPurchases = (purchases.data ?? []).map((row) =>
+        mapPurchase(row as PurchaseRow),
+      );
     }
   }
 
@@ -415,6 +470,52 @@ export class StoreService implements OnModuleInit {
     await this.persistStoryArchived();
     await this.persistItineraryReservations();
     await this.persistItineraryBlockCommutes();
+    await this.persistPurchaseFields();
+  }
+
+  private async persistPurchaseFields() {
+    if (!this.supabase) return;
+    for (const story of this.data.stories) {
+      for (const spot of story.spots) {
+        const result = await this.supabase
+          .from('spots')
+          .update({
+            purchase_only: spot.purchaseOnly ?? false,
+            price_inr: spot.priceInr ?? 99,
+          })
+          .eq('story_slug', story.slug)
+          .eq('id', spot.id);
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+      for (const blog of story.blogs ?? []) {
+        const result = await this.supabase
+          .from('story_blogs')
+          .update({
+            purchase_only: blog.purchaseOnly ?? false,
+            price_inr: blog.priceInr ?? 99,
+          })
+          .eq('story_slug', story.slug)
+          .eq('slug', blog.slug);
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+      for (const itinerary of story.itineraries) {
+        const result = await this.supabase
+          .from('itineraries')
+          .update({
+            purchase_only: itinerary.purchaseOnly ?? false,
+            price_inr: itinerary.priceInr ?? 99,
+          })
+          .eq('story_slug', story.slug)
+          .eq('slug', itinerary.slug);
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+    }
   }
 
   private async persistStoryArchived() {
@@ -558,6 +659,8 @@ type ItineraryRow = {
   archived?: boolean | null;
   deleted_at?: string | null;
   reservations?: unknown;
+  purchase_only?: boolean | null;
+  price_inr?: number | null;
   position: number;
   itinerary_days: DayRow[] | null;
 };
@@ -576,6 +679,8 @@ type SpotRow = {
   tags: string[] | null;
   archived?: boolean | null;
   deleted_at?: string | null;
+  purchase_only?: boolean | null;
+  price_inr?: number | null;
   position: number;
 };
 
@@ -607,6 +712,8 @@ type BlogRow = {
   cover_url?: string | null;
   archived?: boolean | null;
   deleted_at?: string | null;
+  purchase_only?: boolean | null;
+  price_inr?: number | null;
   position: number;
 };
 
@@ -621,6 +728,7 @@ function blankStore(settings: Settings, stories: Story[]): StoreFile {
     glimpseLikes: [],
     glimpseComments: [],
     contentMarks: [],
+    contentPurchases: [],
   };
 }
 
@@ -693,6 +801,8 @@ function mapStory(row: StoryRow): Story {
       coverUrl: blog.cover_url ?? '',
       archived: blog.archived ?? false,
       deletedAt: rowTime(blog.deleted_at),
+      purchaseOnly: blog.purchase_only ?? false,
+      priceInr: blog.price_inr ?? 99,
     })),
     archived: row.archived ?? false,
     deletedAt: rowTime(row.deleted_at),
@@ -714,6 +824,8 @@ function mapSpot(row: SpotRow): Spot {
     tags: row.tags ?? [],
     archived: row.archived ?? false,
     deletedAt: rowTime(row.deleted_at),
+    purchaseOnly: row.purchase_only ?? false,
+    priceInr: row.price_inr ?? 99,
   };
 }
 
@@ -725,6 +837,8 @@ function mapItinerary(row: ItineraryRow): Itinerary {
     coverUrl: row.cover_url,
     archived: row.archived ?? false,
     deletedAt: rowTime(row.deleted_at),
+    purchaseOnly: row.purchase_only ?? false,
+    priceInr: row.price_inr ?? 99,
     reservations: mapReservations(row.reservations),
     days: byPosition(row.itinerary_days ?? []).map((day) => ({
       title: day.title,
@@ -905,6 +1019,16 @@ type MarkRow = {
   spot_id: string;
 };
 
+type PurchaseRow = {
+  id: string;
+  buyer_id: string;
+  story_slug: string;
+  kind: ContentPurchase['kind'];
+  item_id: string;
+  price_inr: number;
+  created_at: string;
+};
+
 function mapProfile(row: ProfileRow): Profile {
   return {
     id: row.id,
@@ -1010,6 +1134,18 @@ function mapMark(row: MarkRow): ContentMark {
     storySlug: row.story_slug,
     itinerarySlug: row.itinerary_slug,
     spotId: row.spot_id,
+  };
+}
+
+function mapPurchase(row: PurchaseRow): ContentPurchase {
+  return {
+    id: row.id,
+    buyerId: row.buyer_id,
+    storySlug: row.story_slug,
+    kind: row.kind,
+    itemId: row.item_id,
+    priceInr: row.price_inr,
+    createdAt: row.created_at,
   };
 }
 

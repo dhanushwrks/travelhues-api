@@ -14,6 +14,9 @@ export type Spot = {
   tags: string[];
   archived?: boolean;
   deletedAt?: string | null;
+  purchaseOnly?: boolean;
+  priceInr?: number;
+  locked?: boolean;
 };
 
 export type NoteBlock = {
@@ -77,6 +80,9 @@ export type Itinerary = {
   reservations?: Reservation[];
   archived?: boolean;
   deletedAt?: string | null;
+  purchaseOnly?: boolean;
+  priceInr?: number;
+  locked?: boolean;
 };
 
 export type Creator = {
@@ -100,6 +106,9 @@ export type StoryBlog = {
   coverUrl: string;
   archived?: boolean;
   deletedAt?: string | null;
+  purchaseOnly?: boolean;
+  priceInr?: number;
+  locked?: boolean;
 };
 
 export type Story = {

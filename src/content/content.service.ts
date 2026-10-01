@@ -2,7 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { StoreService } from '../store/store.service.js';
 import type { PublicSettings } from '../store/store.types.js';
 import type { CreatorProfile, ItineraryDetail, Story } from './content.types.js';
-import { isPersonalTrip, personalAccounts, publicStory, quietAccounts, storyIsPublic } from './public-story.js';
+import {
+  entitlementSet,
+  isPersonalTrip,
+  personalAccounts,
+  publicStory,
+  quietAccounts,
+  storyIsPublic,
+} from './public-story.js';
 import { searchCatalog, type SearchPage } from './search.js';
 import { listCreatorsCatalog, type CreatorsPage } from './creators-list.js';
 
@@ -18,33 +25,29 @@ export class ContentService {
     };
   }
 
-  getStories(): Story[] {
-    return this.publishedStories();
+  getStories(viewerId?: string): Story[] {
+    return this.publishedStories(viewerId);
   }
 
-  getStory(slug: string): Story {
-    const story = this.publishedStories().find((item) => item.slug === slug);
+  getStory(slug: string, viewerId?: string): Story {
+    const story = this.publishedStories(viewerId).find((item) => item.slug === slug);
     if (!story) {
       throw new NotFoundException(`Story ${slug} was not found`);
     }
     return story;
   }
 
-  getItinerary(storySlug: string, itinerarySlug: string): ItineraryDetail {
-    const story = this.getStory(storySlug);
-    const itinerary = story.itineraries.find(
-      (item) => item.slug === itinerarySlug,
-    );
+  getItinerary(storySlug: string, itinerarySlug: string, viewerId?: string): ItineraryDetail {
+    const story = this.getStory(storySlug, viewerId);
+    const itinerary = story.itineraries.find((item) => item.slug === itinerarySlug);
     if (!itinerary) {
-      throw new NotFoundException(
-        `Itinerary ${itinerarySlug} was not found on ${storySlug}`,
-      );
+      throw new NotFoundException(`Itinerary ${itinerarySlug} was not found on ${storySlug}`);
     }
     return { story, itinerary };
   }
 
-  getCreator(username: string): CreatorProfile {
-    const owned = this.publishedStories().filter(
+  getCreator(username: string, viewerId?: string): CreatorProfile {
+    const owned = this.publishedStories(viewerId).filter(
       (item) => item.creator.username === username,
     );
     const story = owned[0];
@@ -79,7 +82,12 @@ export class ContentService {
     page?: string;
     limit?: string;
   }): CreatorsPage {
-    return listCreatorsCatalog(query, this.publishedStories(), this.store.getProfiles(), this.likeCounts());
+    return listCreatorsCatalog(
+      query,
+      this.publishedStories(),
+      this.store.getProfiles(),
+      this.likeCounts(),
+    );
   }
 
   listDestinations(query: { country?: string; limit?: string }): Story[] {
@@ -120,7 +128,7 @@ export class ContentService {
     return [...totals.entries()].map(([key, likes]) => ({ key, likes }));
   }
 
-  private publishedStories() {
+  private publishedStories(viewerId?: string) {
     if (!this.store.getSettings().api.contentPublished) return [];
     const profiles = this.store.getProfiles();
     const quiet = quietAccounts(profiles);
@@ -133,16 +141,37 @@ export class ContentService {
     const byOwner = new Map(
       profiles.filter((profile) => profile.id).map((profile) => [profile.id, profile] as const),
     );
+    const entitlements = viewerId
+      ? entitlementSet(
+          this.store
+            .getPurchases()
+            .filter((item) => item.buyerId === viewerId)
+            .map((item) => ({
+              storySlug: item.storySlug,
+              kind: item.kind,
+              itemId: item.itemId,
+            })),
+        )
+      : new Set<string>();
     return this.store
       .getStories()
       .filter((story) => storyIsPublic(story, quiet) && !isPersonalTrip(story, personal))
       .map((story) =>
-        publicStory(withLiveCreator(story, byOwner.get(story.ownerId ?? '') ?? byUsername.get(story.creator.username))),
+        publicStory(
+          withLiveCreator(
+            story,
+            byOwner.get(story.ownerId ?? '') ?? byUsername.get(story.creator.username),
+          ),
+          { viewerId, entitlements },
+        ),
       );
   }
 }
 
-function withLiveCreator(story: Story, profile: { username: string; displayName: string; bio: string; avatarUrl: string } | undefined): Story {
+function withLiveCreator(
+  story: Story,
+  profile: { username: string; displayName: string; bio: string; avatarUrl: string } | undefined,
+): Story {
   if (!profile) return story;
   return {
     ...story,
@@ -150,7 +179,6 @@ function withLiveCreator(story: Story, profile: { username: string; displayName:
       username: profile.username || story.creator.username,
       displayName: profile.displayName || story.creator.displayName,
       bio: profile.bio || story.creator.bio,
-      // Prefer the live profile photo so denormalized Unsplash seed avatars do not stick.
       avatarUrl: profile.avatarUrl,
     },
   };
