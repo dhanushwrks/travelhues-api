@@ -788,7 +788,14 @@ function mapCommute(value: unknown): CommuteLeg | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const row = value as Record<string, unknown>;
   const mode = row.mode;
-  if (mode !== 'cab' && mode !== 'public' && mode !== 'self_drive' && mode !== 'flight') {
+  if (
+    mode !== 'walk' &&
+    mode !== 'cycle' &&
+    mode !== 'cab' &&
+    mode !== 'public' &&
+    mode !== 'self_drive' &&
+    mode !== 'flight'
+  ) {
     return undefined;
   }
   return {

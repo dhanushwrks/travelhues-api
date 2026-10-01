@@ -712,8 +712,17 @@ function parseCommute(value: unknown): CommuteLeg | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const record = asRecord(value, 'Commute');
   const mode = record.mode;
-  if (mode !== 'cab' && mode !== 'public' && mode !== 'self_drive' && mode !== 'flight') {
-    throw new BadRequestException('Commute mode must be cab, public, self drive, or flight');
+  if (
+    mode !== 'walk' &&
+    mode !== 'cycle' &&
+    mode !== 'cab' &&
+    mode !== 'public' &&
+    mode !== 'self_drive' &&
+    mode !== 'flight'
+  ) {
+    throw new BadRequestException(
+      'Commute mode must be walk, cycle, cab, public, self drive, or flight',
+    );
   }
   const minutes =
     record.minutes === undefined || record.minutes === null || record.minutes === ''

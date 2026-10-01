@@ -21,7 +21,7 @@ export type NoteBlock = {
   body: string;
 };
 
-export type CommuteMode = 'cab' | 'public' | 'self_drive' | 'flight';
+export type CommuteMode = 'walk' | 'cycle' | 'cab' | 'public' | 'self_drive' | 'flight';
 
 export type CommuteLeg = {
   mode: CommuteMode;
