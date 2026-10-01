@@ -359,15 +359,15 @@ export class PeopleService {
     });
   }
 
-  publicProfile(username: string, viewer: AuthUser) {
+  publicProfile(username: string, viewer?: AuthUser | null) {
     const profile = this.store.getProfiles().find((item) => item.username === username);
     if (profile) {
       if (profile.role !== 'tcc') throw new NotFoundException('Profile was not found');
       if (profile.deletedAt || profile.disabled) throw new NotFoundException('Profile was not found');
-      if (profile.hidden && profile.id !== viewer.id) {
+      if (profile.hidden && profile.id !== viewer?.id) {
         throw new NotFoundException('Profile was not found');
       }
-      return this.present(profile, profile.id === viewer.id);
+      return this.present(profile, Boolean(viewer && profile.id === viewer.id));
     }
     const stories = this.storiesFor(username, undefined);
     const story = stories[0];

@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { AdminGuard } from '../admin/admin.guard.js';
 import { AuthService } from '../auth/auth.service.js';
+import { OptionalUserGuard, type MaybeAuthedRequest } from '../auth/optional-user.guard.js';
 import { UserGuard, type AuthedRequest } from '../auth/user.guard.js';
 import { listCountries } from './countries.js';
 import { PeopleService } from './people.service.js';
@@ -134,9 +135,9 @@ export class PeopleController {
   }
 
   @Get('profiles/:username')
-  @UseGuards(UserGuard)
-  profile(@Param('username') username: string, @Req() request: AuthedRequest) {
-    return this.people.publicProfile(username, request.user);
+  @UseGuards(OptionalUserGuard)
+  profile(@Param('username') username: string, @Req() request: MaybeAuthedRequest) {
+    return this.people.publicProfile(username, request.user ?? null);
   }
 
   private token(request: AuthedRequest) {

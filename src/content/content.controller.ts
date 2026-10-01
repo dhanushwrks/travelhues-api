@@ -138,7 +138,6 @@ export class ContentController {
   }
 
   @Get('search')
-  @UseGuards(UserGuard)
   search(
     @Query('q') q = '',
     @Query('kind') kind = '',
@@ -152,13 +151,11 @@ export class ContentController {
   }
 
   @Get('stories')
-  @UseGuards(UserGuard)
   getStories() {
     return this.content.getStories();
   }
 
   @Get('stories/:slug')
-  @UseGuards(UserGuard)
   getStory(@Param('slug') slug: string) {
     return this.content.getStory(slug);
   }
@@ -173,7 +170,6 @@ export class ContentController {
   }
 
   @Get('creators/:username')
-  @UseGuards(UserGuard)
   getCreator(@Param('username') username: string) {
     return this.content.getCreator(username);
   }
