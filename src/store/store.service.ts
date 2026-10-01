@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { Block, Itinerary, Spot, Story } from '../content/content.types.js';
+import type { Block, CommuteLeg, Itinerary, Spot, Story } from '../content/content.types.js';
 import type { Glimpse, GlimpseComment, GlimpseLike } from '../glimpses/glimpses.types.js';
 import type { ContentMark } from '../marks/marks.types.js';
 import type { CreatorInvite, Profile, WaitlistRequest } from '../people/people.types.js';
@@ -296,14 +296,14 @@ export class StoreService implements OnModuleInit {
     const result = await this.supabase.from('stories').select(`
       slug, owner_id, title, summary, cover_url,
       destination_name, destination_country, destination_lat, destination_lng,
-      creator_username, creator_display_name, creator_bio, creator_avatar_url, deleted_at,
+      creator_username, creator_display_name, creator_bio, creator_avatar_url, archived, deleted_at,
       spots (id, type, title, description, images, lat, lng, address, avg_minutes, avg_cost_thb, tags, archived, deleted_at, position),
       story_blogs (slug, title, body, cover_url, archived, deleted_at, position),
       itineraries (
-        slug, title, summary, cover_url, archived, deleted_at, position,
+        slug, title, summary, cover_url, archived, deleted_at, reservations, position,
         itinerary_days (
           position, title,
-          itinerary_blocks (position, kind, body, spot_id)
+          itinerary_blocks (position, kind, body, spot_id, commute)
         )
       )
     `);
@@ -412,6 +412,73 @@ export class StoreService implements OnModuleInit {
     if (result.error) throw new Error(result.error.message);
     await this.persistBrandLinks();
     await this.persistIntroVideos();
+    await this.persistStoryArchived();
+    await this.persistItineraryReservations();
+    await this.persistItineraryBlockCommutes();
+  }
+
+  private async persistStoryArchived() {
+    if (!this.supabase) return;
+    for (const story of this.data.stories) {
+      const result = await this.supabase
+        .from('stories')
+        .update({ archived: story.archived ?? false })
+        .eq('slug', story.slug);
+      if (result.error && !isMissingSchema(result.error.message)) {
+        throw new Error(result.error.message);
+      }
+    }
+  }
+
+  private async persistItineraryReservations() {
+    if (!this.supabase) return;
+    for (const story of this.data.stories) {
+      for (const itinerary of story.itineraries) {
+        const result = await this.supabase
+          .from('itineraries')
+          .update({ reservations: itinerary.reservations ?? [] })
+          .eq('story_slug', story.slug)
+          .eq('slug', itinerary.slug);
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+    }
+  }
+
+  private async persistItineraryBlockCommutes() {
+    if (!this.supabase) return;
+    for (const story of this.data.stories) {
+      for (const itinerary of story.itineraries) {
+        for (let dayIndex = 0; dayIndex < itinerary.days.length; dayIndex += 1) {
+          const day = itinerary.days[dayIndex];
+          const dayLookup = await this.supabase
+            .from('itinerary_days')
+            .select('id')
+            .eq('story_slug', story.slug)
+            .eq('itinerary_slug', itinerary.slug)
+            .eq('position', dayIndex)
+            .maybeSingle();
+          if (dayLookup.error && !isMissingSchema(dayLookup.error.message)) {
+            throw new Error(dayLookup.error.message);
+          }
+          const dayId = dayLookup.data?.id;
+          if (!dayId) continue;
+          for (let blockIndex = 0; blockIndex < day.blocks.length; blockIndex += 1) {
+            const block = day.blocks[blockIndex];
+            if (block.kind !== 'spot') continue;
+            const result = await this.supabase
+              .from('itinerary_blocks')
+              .update({ commute: block.commute ?? null })
+              .eq('day_id', dayId)
+              .eq('position', blockIndex);
+            if (result.error && !isMissingSchema(result.error.message)) {
+              throw new Error(result.error.message);
+            }
+          }
+        }
+      }
+    }
   }
 
   private async persistIntroVideos() {
@@ -474,6 +541,7 @@ type BlockRow = {
   kind: string;
   body: string;
   spot_id: string | null;
+  commute?: unknown;
 };
 
 type DayRow = {
@@ -489,6 +557,7 @@ type ItineraryRow = {
   cover_url: string;
   archived?: boolean | null;
   deleted_at?: string | null;
+  reservations?: unknown;
   position: number;
   itinerary_days: DayRow[] | null;
 };
@@ -524,6 +593,7 @@ type StoryRow = {
   creator_display_name: string;
   creator_bio: string;
   creator_avatar_url: string;
+  archived?: boolean | null;
   deleted_at?: string | null;
   spots: SpotRow[] | null;
   itineraries: ItineraryRow[] | null;
@@ -624,6 +694,7 @@ function mapStory(row: StoryRow): Story {
       archived: blog.archived ?? false,
       deletedAt: rowTime(blog.deleted_at),
     })),
+    archived: row.archived ?? false,
     deletedAt: rowTime(row.deleted_at),
   };
 }
@@ -654,6 +725,7 @@ function mapItinerary(row: ItineraryRow): Itinerary {
     coverUrl: row.cover_url,
     archived: row.archived ?? false,
     deletedAt: rowTime(row.deleted_at),
+    reservations: mapReservations(row.reservations),
     days: byPosition(row.itinerary_days ?? []).map((day) => ({
       title: day.title,
       blocks: byPosition(day.itinerary_blocks ?? []).map(mapBlock),
@@ -661,11 +733,78 @@ function mapItinerary(row: ItineraryRow): Itinerary {
   };
 }
 
+function mapReservations(value: unknown): Itinerary['reservations'] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const row = item as Record<string, unknown>;
+    const type = row.type;
+    if (type !== 'stay' && type !== 'rental' && type !== 'flight' && type !== 'experience') {
+      return [];
+    }
+    if (typeof row.id !== 'string' || !row.id.trim()) return [];
+    if (typeof row.title !== 'string' || !row.title.trim()) return [];
+    const fromDay = typeof row.fromDay === 'number' && row.fromDay >= 0 ? Math.floor(row.fromDay) : 0;
+    const toDayRaw = typeof row.toDay === 'number' && row.toDay >= 0 ? Math.floor(row.toDay) : fromDay;
+    return [
+      {
+        id: row.id.trim(),
+        type,
+        title: row.title.trim(),
+        spotId: typeof row.spotId === 'string' && row.spotId.trim() ? row.spotId.trim() : undefined,
+        fromDay,
+        toDay: Math.max(fromDay, toDayRaw),
+        fromPlace: typeof row.fromPlace === 'string' ? row.fromPlace : undefined,
+        toPlace: typeof row.toPlace === 'string' ? row.toPlace : undefined,
+        rentalKind:
+          row.rentalKind === 'car' || row.rentalKind === 'bike' || row.rentalKind === 'scooter'
+            ? row.rentalKind
+            : undefined,
+        estCostThb: typeof row.estCostThb === 'number' ? row.estCostThb : undefined,
+        link: typeof row.link === 'string' ? row.link : undefined,
+        notes: typeof row.notes === 'string' ? row.notes : undefined,
+        airline: typeof row.airline === 'string' ? row.airline : undefined,
+        flightNumber: typeof row.flightNumber === 'string' ? row.flightNumber : undefined,
+        timeOfDay: typeof row.timeOfDay === 'string' ? row.timeOfDay : undefined,
+      },
+    ];
+  });
+}
+
 function mapBlock(row: BlockRow): Block {
   if (row.kind === 'spot') {
-    return { kind: 'spot', spotId: row.spot_id ?? '', body: row.body };
+    const commute = mapCommute(row.commute);
+    return {
+      kind: 'spot',
+      spotId: row.spot_id ?? '',
+      body: row.body,
+      ...(commute ? { commute } : {}),
+    };
   }
   return { kind: 'note', body: row.body };
+}
+
+function mapCommute(value: unknown): CommuteLeg | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const row = value as Record<string, unknown>;
+  const mode = row.mode;
+  if (mode !== 'cab' && mode !== 'public' && mode !== 'self_drive' && mode !== 'flight') {
+    return undefined;
+  }
+  return {
+    mode,
+    notes: typeof row.notes === 'string' ? row.notes : undefined,
+    minutes: typeof row.minutes === 'number' ? row.minutes : undefined,
+    costThb: typeof row.costThb === 'number' ? row.costThb : undefined,
+    mapsMinutes: typeof row.mapsMinutes === 'number' ? row.mapsMinutes : undefined,
+    mapsDistanceM: typeof row.mapsDistanceM === 'number' ? row.mapsDistanceM : undefined,
+    minutesSource:
+      row.minutesSource === 'manual' ||
+      row.minutesSource === 'maps' ||
+      row.minutesSource === 'maps_overridden'
+        ? row.minutesSource
+        : undefined,
+  };
 }
 
 function isMissingSchema(message: string) {

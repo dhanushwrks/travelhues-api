@@ -91,6 +91,17 @@ export class ContentController {
     return this.admin.updateItinerary(slug, itinerarySlug, body);
   }
 
+  @Post('stories/:slug/archive')
+  @UseGuards(UserGuard)
+  archiveStory(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.setStoryArchived(slug, archivedFlag(body));
+  }
+
   @Post('stories/:slug/spots/:spotId/archive')
   @UseGuards(UserGuard)
   archiveSpot(

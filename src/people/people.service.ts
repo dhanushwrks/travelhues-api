@@ -400,7 +400,9 @@ export class PeopleService {
   }
 
   private present(profile: Profile, includePrivate: boolean) {
-    const stories = this.storiesFor(profile.username, profile.id);
+    const stories = this.storiesFor(profile.username, profile.id).filter(
+      (story) => includePrivate || !story.archived,
+    );
     const visible = stories.map((story) => publicStory(story));
     const spots = visible.reduce((total, story) => total + story.spots.length, 0);
     const itineraries = visible.reduce((total, story) => total + story.itineraries.length, 0);

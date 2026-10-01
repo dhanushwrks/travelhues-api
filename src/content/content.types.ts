@@ -21,17 +21,51 @@ export type NoteBlock = {
   body: string;
 };
 
+export type CommuteMode = 'cab' | 'public' | 'self_drive' | 'flight';
+
+export type CommuteLeg = {
+  mode: CommuteMode;
+  notes?: string;
+  minutes?: number;
+  costThb?: number;
+  mapsMinutes?: number;
+  mapsDistanceM?: number;
+  minutesSource?: 'manual' | 'maps' | 'maps_overridden';
+};
+
 export type SpotBlock = {
   kind: 'spot';
   spotId: string;
   body: string;
+  commute?: CommuteLeg;
 };
 
 export type Block = NoteBlock | SpotBlock;
 
 export type Day = {
   title: string;
+  brief?: string;
   blocks: Block[];
+};
+
+export type ReservationType = 'stay' | 'rental' | 'flight' | 'experience';
+
+export type Reservation = {
+  id: string;
+  type: ReservationType;
+  title: string;
+  spotId?: string;
+  fromDay: number;
+  toDay: number;
+  fromPlace?: string;
+  toPlace?: string;
+  rentalKind?: 'car' | 'bike' | 'scooter';
+  estCostThb?: number;
+  link?: string;
+  notes?: string;
+  airline?: string;
+  flightNumber?: string;
+  timeOfDay?: string;
 };
 
 export type Itinerary = {
@@ -40,6 +74,7 @@ export type Itinerary = {
   summary: string;
   coverUrl: string;
   days: Day[];
+  reservations?: Reservation[];
   archived?: boolean;
   deletedAt?: string | null;
 };
@@ -78,6 +113,7 @@ export type Story = {
   spots: Spot[];
   itineraries: Itinerary[];
   blogs: StoryBlog[];
+  archived?: boolean;
   deletedAt?: string | null;
 };
 

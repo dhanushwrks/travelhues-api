@@ -7,9 +7,11 @@ import {
 } from '@nestjs/common';
 import type {
   Block,
+  CommuteLeg,
   Creator,
   Destination,
   Itinerary,
+  Reservation,
   Spot,
   Story,
   StoryBlog,
@@ -156,6 +158,8 @@ export class AdminService {
         ...next,
         slug,
         ownerId: existing.ownerId,
+        archived: existing.archived ?? false,
+        deletedAt: existing.deletedAt,
         destination: {
           ...next.destination,
           country,
@@ -334,6 +338,15 @@ export class AdminService {
     });
   }
 
+  async setStoryArchived(storySlug: string, archived: boolean) {
+    this.requireStory(storySlug);
+    await this.store.update((draft) => {
+      const story = draft.stories.find((item) => item.slug === storySlug);
+      if (story) story.archived = archived;
+    });
+    return { archived };
+  }
+
   async setSpotArchived(storySlug: string, spotId: string, archived: boolean) {
     this.requirePiece(storySlug, (story) => story.spots.some((item) => item.id === spotId), `Spot ${spotId} was not found`);
     await this.store.update((draft) => {
@@ -450,6 +463,7 @@ function parseStory(
     spots,
     itineraries,
     blogs: [],
+    archived: false,
   };
 }
 
@@ -557,6 +571,7 @@ function parseItinerary(
     summary: asText(record.summary, 'Summary'),
     coverUrl: asHttpUrl(record.coverUrl, 'Cover URL'),
     days: days.map((day, index) => parseDay(day, index, spotIds)),
+    reservations: parseReservations(record.reservations, days.length, spotIds),
     archived: false,
   };
 }
@@ -567,10 +582,109 @@ function parseDay(value: unknown, index: number, spotIds: Set<string>) {
   if (!Array.isArray(blocks)) {
     throw new BadRequestException(`Day ${index + 1} needs a block list`);
   }
+  const brief =
+    typeof record.brief === 'string' && record.brief.trim()
+      ? record.brief.trim()
+      : undefined;
   return {
     title: asText(record.title, `Day ${index + 1} title`),
+    ...(brief ? { brief } : {}),
     blocks: blocks.map((block) => parseBlock(block, spotIds)),
   };
+}
+
+function parseReservations(
+  value: unknown,
+  dayCount: number,
+  spotIds: Set<string>,
+): Reservation[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new BadRequestException('Reservations must be a list');
+  }
+  return value.map((item, index) => parseReservation(item, index, dayCount, spotIds));
+}
+
+function parseReservation(
+  value: unknown,
+  index: number,
+  dayCount: number,
+  spotIds: Set<string>,
+): Reservation {
+  const record = asRecord(value, `Reservation ${index + 1}`);
+  const type = parseReservationType(record.type);
+  const fromDay = clampDay(asDayIndex(record.fromDay, `Reservation ${index + 1} from day`), dayCount);
+  const toDay = Math.max(
+    fromDay,
+    clampDay(asDayIndex(record.toDay ?? record.fromDay, `Reservation ${index + 1} to day`), dayCount),
+  );
+  const spotId =
+    typeof record.spotId === 'string' && record.spotId.trim()
+      ? asSlug(record.spotId, `Reservation ${index + 1} find`)
+      : undefined;
+  if (spotId && !spotIds.has(spotId)) {
+    throw new BadRequestException(`Reservation find ${spotId} is not on this story`);
+  }
+  const rentalKind = parseRentalKind(record.rentalKind);
+  const estCostThb =
+    record.estCostThb === undefined || record.estCostThb === null || record.estCostThb === ''
+      ? undefined
+      : asNonNegative(record.estCostThb, `Reservation ${index + 1} cost`);
+  return {
+    id:
+      typeof record.id === 'string' && record.id.trim()
+        ? record.id.trim()
+        : `reservation-${index + 1}`,
+    type,
+    title: asText(record.title, `Reservation ${index + 1} title`),
+    spotId,
+    fromDay,
+    toDay,
+    fromPlace: optionalText(record.fromPlace),
+    toPlace: optionalText(record.toPlace),
+    rentalKind,
+    estCostThb,
+    link: optionalText(record.link),
+    notes: optionalText(record.notes),
+    airline: optionalText(record.airline),
+    flightNumber: optionalText(record.flightNumber),
+    timeOfDay: optionalText(record.timeOfDay),
+  };
+}
+
+function parseReservationType(value: unknown): Reservation['type'] {
+  if (value === 'stay' || value === 'rental' || value === 'flight' || value === 'experience') {
+    return value;
+  }
+  if (value === 'hotel') return 'stay';
+  if (value === 'car') return 'rental';
+  throw new BadRequestException('Reservation type must be stay, rental, flight, or experience');
+}
+
+function parseRentalKind(value: unknown): Reservation['rentalKind'] | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === 'car' || value === 'bike' || value === 'scooter') return value;
+  throw new BadRequestException('Rental kind must be car, bike, or scooter');
+}
+
+function asDayIndex(value: unknown, label: string) {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed >= 0) return parsed;
+  }
+  throw new BadRequestException(`${label} is required`);
+}
+
+function clampDay(value: number, dayCount: number) {
+  if (dayCount <= 0) return 0;
+  return Math.min(value, dayCount - 1);
+}
+
+function optionalText(value: unknown) {
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim();
+  return text || undefined;
 }
 
 function parseBlock(value: unknown, spotIds: Set<string>): Block {
@@ -583,9 +697,65 @@ function parseBlock(value: unknown, spotIds: Set<string>): Block {
     if (!spotIds.has(spotId)) {
       throw new BadRequestException(`Spot ${spotId} is not on this story`);
     }
-    return { kind: 'spot', spotId, body: asText(record.body, 'Spot note') };
+    const commute = parseCommute(record.commute);
+    return {
+      kind: 'spot',
+      spotId,
+      body: asText(record.body, 'Spot note'),
+      ...(commute ? { commute } : {}),
+    };
   }
   throw new BadRequestException('A block is either a note or a spot');
+}
+
+function parseCommute(value: unknown): CommuteLeg | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const record = asRecord(value, 'Commute');
+  const mode = record.mode;
+  if (mode !== 'cab' && mode !== 'public' && mode !== 'self_drive' && mode !== 'flight') {
+    throw new BadRequestException('Commute mode must be cab, public, self drive, or flight');
+  }
+  const minutes =
+    record.minutes === undefined || record.minutes === null || record.minutes === ''
+      ? undefined
+      : asNonNegative(Number(record.minutes), 'Commute time');
+  const costThb =
+    record.costThb === undefined || record.costThb === null || record.costThb === ''
+      ? undefined
+      : asNonNegative(Number(record.costThb), 'Commute cost');
+  const mapsMinutes =
+    record.mapsMinutes === undefined || record.mapsMinutes === null || record.mapsMinutes === ''
+      ? undefined
+      : asNonNegative(Number(record.mapsMinutes), 'Maps time');
+  const mapsDistanceM =
+    record.mapsDistanceM === undefined ||
+    record.mapsDistanceM === null ||
+    record.mapsDistanceM === ''
+      ? undefined
+      : asNonNegative(Number(record.mapsDistanceM), 'Maps distance');
+  const minutesSource = record.minutesSource;
+  if (
+    minutesSource !== undefined &&
+    minutesSource !== null &&
+    minutesSource !== '' &&
+    minutesSource !== 'manual' &&
+    minutesSource !== 'maps' &&
+    minutesSource !== 'maps_overridden'
+  ) {
+    throw new BadRequestException('Commute minutes source is invalid');
+  }
+  return {
+    mode,
+    notes: optionalText(record.notes),
+    minutes,
+    costThb,
+    mapsMinutes,
+    mapsDistanceM,
+    minutesSource:
+      minutesSource === 'manual' || minutesSource === 'maps' || minutesSource === 'maps_overridden'
+        ? minutesSource
+        : undefined,
+  };
 }
 
 function asRecord(value: unknown, label: string): Record<string, unknown> {

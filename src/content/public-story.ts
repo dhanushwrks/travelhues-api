@@ -18,6 +18,7 @@ export function storyIsPublic(
   quiet: { ids: Set<string>; names: Set<string> },
 ) {
   if (story.deletedAt) return false;
+  if (story.archived) return false;
   if (story.ownerId && quiet.ids.has(story.ownerId)) return false;
   if (quiet.names.has(story.creator.username)) return false;
   return true;
