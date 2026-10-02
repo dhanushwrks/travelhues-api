@@ -23,7 +23,10 @@ export class GlimpsesService {
     if (!this.store.getSettings().api.contentPublished) return [];
     const code = query.country ? query.country.toUpperCase() : '';
     const storySlug = (query.storySlug ?? '').trim();
-    const cap = Math.min(50, Math.max(1, Number.parseInt(query.limit ?? '0', 10) || 0));
+    const parsed = Number.parseInt(query.limit ?? '', 10);
+    const cap = Number.isFinite(parsed) && parsed > 0
+      ? Math.min(50, parsed)
+      : 30;
     const quiet = quietAccounts(this.store.getProfiles());
     let rows = this.store
       .getGlimpses()

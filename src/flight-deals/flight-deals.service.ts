@@ -12,11 +12,14 @@ import {
   parseDealBody,
   parseEventBody,
 } from './flight-deals.parse.js';
+import { enrichPublicDeal, offerPercent } from './flight-deal-display.js';
 import type {
   FlightDeal,
   FlightDealAnalytics,
   FlightDealImportResult,
+  FlightDealSort,
   FlightDealStoryPreview,
+  FlightDealsListResponse,
   PublicFlightDeal,
 } from './flight-deals.types.js';
 
@@ -24,23 +27,28 @@ import type {
 export class FlightDealsService {
   constructor(private readonly store: StoreService) {}
 
-  listPublic(origin: string | undefined, limit: number) {
+  listPublic(
+    origin: string | undefined,
+    limit: number,
+    offset = 0,
+    sort: FlightDealSort = 'featured',
+  ): FlightDealsListResponse {
     const now = Date.now();
     const originCode = origin ? normalizeIata(origin) : '';
-    const items = this.store
+    const filtered = this.store
       .getFlightDeals()
       .filter((deal) => deal.status === 'published')
       .filter((deal) => Date.parse(deal.validFrom) <= now && Date.parse(deal.validUntil) >= now)
-      .filter((deal) => !originCode || deal.originIata === originCode)
-      .sort(
-        (left, right) =>
-          right.priority - left.priority ||
-          left.priceInr - right.priceInr ||
-          left.departureDate.localeCompare(right.departureDate),
-      )
-      .slice(0, limit)
-      .map((deal) => this.presentPublic(deal));
-    return items;
+      .filter((deal) => !originCode || deal.originIata === originCode);
+
+    const sorted = [...filtered].sort((left, right) => compareDeals(left, right, sort));
+    const total = sorted.length;
+    const slice = sorted.slice(offset, offset + limit).map((deal) => this.presentPublic(deal));
+    return {
+      items: slice,
+      total,
+      hasMore: offset + limit < total,
+    };
   }
 
   getPublic(id: string) {
@@ -241,11 +249,7 @@ export class FlightDealsService {
   }
 
   private presentPublic(deal: FlightDeal): PublicFlightDeal {
-    return {
-      ...deal,
-      tripType: deal.returnDate ? 'return' : 'one_way',
-      storyPreview: this.storyPreview(deal),
-    };
+    return enrichPublicDeal(deal, this.storyPreview(deal));
   }
 
   private storyPreview(deal: FlightDeal): FlightDealStoryPreview | null {
@@ -317,6 +321,27 @@ export class FlightDealsService {
           item.affiliateUrl === affiliate,
       );
   }
+}
+
+function compareDeals(left: FlightDeal, right: FlightDeal, sort: FlightDealSort) {
+  if (sort === 'latest') {
+    return (
+      right.updatedAt.localeCompare(left.updatedAt) ||
+      right.createdAt.localeCompare(left.createdAt)
+    );
+  }
+  if (sort === 'offer') {
+    return (
+      offerPercent(right) - offerPercent(left) ||
+      left.priceInr - right.priceInr ||
+      right.updatedAt.localeCompare(left.updatedAt)
+    );
+  }
+  return (
+    right.priority - left.priority ||
+    left.priceInr - right.priceInr ||
+    left.departureDate.localeCompare(right.departureDate)
+  );
 }
 
 function defaultHeadline(input: Partial<FlightDeal>) {

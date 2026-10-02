@@ -19,10 +19,21 @@ export class FlightDealsController {
 
   @Get('flight-deals')
   @UseGuards(OptionalUserGuard)
-  list(@Query('origin') origin?: string, @Query('limit') limit?: string) {
-    const parsed = limit ? Number(limit) : 20;
-    const safe = Number.isFinite(parsed) ? Math.min(Math.max(Math.round(parsed), 1), 50) : 20;
-    return this.deals.listPublic(origin, safe);
+  list(
+    @Query('origin') origin?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('sort') sort?: string,
+  ) {
+    const parsedLimit = limit ? Number(limit) : 20;
+    const safeLimit = Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(Math.round(parsedLimit), 1), 50)
+      : 20;
+    const parsedOffset = offset ? Number(offset) : 0;
+    const safeOffset = Number.isFinite(parsedOffset) ? Math.max(Math.round(parsedOffset), 0) : 0;
+    const safeSort =
+      sort === 'latest' || sort === 'offer' || sort === 'featured' ? sort : 'featured';
+    return this.deals.listPublic(origin, safeLimit, safeOffset, safeSort);
   }
 
   @Get('flight-deals/:id')

@@ -36,6 +36,11 @@ export type FlightDeal = {
   validUntil: string;
   priority: number;
   externalId: string;
+  listPriceInr?: number;
+  airlineName?: string;
+  cabinClass?: string;
+  stops?: number;
+  baggageSummary?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -62,7 +67,24 @@ export type FlightDealStoryPreview = {
 export type PublicFlightDeal = FlightDeal & {
   storyPreview?: FlightDealStoryPreview | null;
   tripType: 'one_way' | 'return';
+  listPriceInr: number;
+  offerPercent: number;
+  tripDays: number;
+  travelMonthLabel: string;
+  cabinClass: string;
+  stopsLabel: string;
+  baggageSummary: string;
+  airlineName: string;
+  dealEndsAt: string;
 };
+
+export type FlightDealsListResponse = {
+  items: PublicFlightDeal[];
+  total: number;
+  hasMore: boolean;
+};
+
+export type FlightDealSort = 'featured' | 'latest' | 'offer';
 
 export type FlightDealImportRowError = {
   row: number;

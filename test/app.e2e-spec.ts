@@ -133,10 +133,11 @@ describe('AppController (e2e)', () => {
       .get('/flight-deals?origin=BLR')
       .expect(200)
       .expect((response) => {
-        if (!Array.isArray(response.body) || response.body.length < 1) {
+        const items = Array.isArray(response.body) ? response.body : response.body.items;
+        if (!Array.isArray(items) || items.length < 1) {
           throw new Error('expected at least one deal');
         }
-        if (response.body[0].id !== created.body.id) {
+        if (items[0].id !== created.body.id) {
           throw new Error('expected created deal in list');
         }
       });
