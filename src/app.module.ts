@@ -8,6 +8,7 @@ import { GlimpsesModule } from './glimpses/glimpses.module.js';
 import { MarksModule } from './marks/marks.module.js';
 import { PeopleModule } from './people/people.module.js';
 import { PurchasesModule } from './purchases/purchases.module.js';
+import { FlightDealsModule } from './flight-deals/flight-deals.module.js';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PurchasesModule } from './purchases/purchases.module.js';
     GlimpsesModule,
     MarksModule,
     PurchasesModule,
+    FlightDealsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

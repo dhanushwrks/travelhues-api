@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { publicJsonCacheHeader } from '../http/public-cache.js';
 import { AdminService } from '../admin/admin.service.js';
 import { OptionalUserGuard, type MaybeAuthedRequest } from '../auth/optional-user.guard.js';
 import { TccGuard } from '../auth/tcc.guard.js';
@@ -152,11 +164,13 @@ export class ContentController {
   }
 
   @Get('settings')
+  @Header('Cache-Control', publicJsonCacheHeader)
   getPublicSettings() {
     return this.content.getPublicSettings();
   }
 
   @Get('spot-catalog')
+  @Header('Cache-Control', publicJsonCacheHeader)
   spotCatalog() {
     return this.admin.catalog();
   }

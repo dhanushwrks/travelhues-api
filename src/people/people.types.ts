@@ -23,6 +23,7 @@ export type Profile = {
   bio: string;
   dateOfBirth: string;
   country: string;
+  homeAirport: string;
   hobbies: string[];
   countriesTraveled: string[];
   socials: SocialLink[];

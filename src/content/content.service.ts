@@ -12,6 +12,7 @@ import {
 } from './public-story.js';
 import { searchCatalog, type SearchPage } from './search.js';
 import { listCreatorsCatalog, type CreatorsPage } from './creators-list.js';
+import { highlightForStory } from './story-highlight.js';
 
 @Injectable()
 export class ContentService {
@@ -34,7 +35,8 @@ export class ContentService {
     if (!story) {
       throw new NotFoundException(`Story ${slug} was not found`);
     }
-    return story;
+    const highlight = highlightForStory(this.store.getGlimpses(), slug);
+    return { ...story, ...highlight };
   }
 
   getItinerary(storySlug: string, itinerarySlug: string, viewerId?: string): ItineraryDetail {

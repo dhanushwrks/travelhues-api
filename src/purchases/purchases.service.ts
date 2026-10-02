@@ -7,17 +7,21 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { AuthUser } from '../auth/auth.user.js';
 import { StoreService } from '../store/store.service.js';
+import { FlightDealsService } from '../flight-deals/flight-deals.service.js';
 import type { ContentPurchase, PurchaseKind } from './purchases.types.js';
 
 @Injectable()
 export class PurchasesService {
-  constructor(private readonly store: StoreService) {}
+  constructor(
+    private readonly store: StoreService,
+    private readonly flightDeals: FlightDealsService,
+  ) {}
 
   async purchase(user: AuthUser, body: unknown) {
     if (user.role !== 'traveler') {
       throw new ForbiddenException('Travelers purchase content');
     }
-    const { storySlug, kind, itemId } = this.parse(body);
+    const { storySlug, kind, itemId, sourceDealId } = this.parse(body);
     const story = this.store.getStories().find((item) => item.slug === storySlug);
     if (!story || story.archived || story.deletedAt) {
       throw new NotFoundException('That story was not found');
@@ -73,9 +77,20 @@ export class PurchasesService {
       kind,
       itemId,
       priceInr,
+      sourceDealId: sourceDealId || undefined,
       createdAt: new Date().toISOString(),
     };
     const saved = await this.store.recordPurchase(purchase);
+    if (sourceDealId && this.flightDeals.assertDealForAttribution(sourceDealId)) {
+      await this.store.recordFlightDealEvent({
+        id: randomUUID(),
+        dealId: sourceDealId,
+        profileId: user.id,
+        eventType: 'purchase',
+        metadata: { storySlug, kind, itemId, purchaseId: saved.id },
+        createdAt: new Date().toISOString(),
+      });
+    }
     return { ok: true, alreadyOwned: false, purchase: saved };
   }
 
@@ -83,6 +98,7 @@ export class PurchasesService {
     storySlug: string;
     kind: PurchaseKind;
     itemId: string;
+    sourceDealId: string;
   } {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw new BadRequestException('Purchase details are required');
@@ -97,6 +113,8 @@ export class PurchasesService {
     if (!storySlug || !itemId || !kind) {
       throw new BadRequestException('Choose a spot, itinerary, or blog to purchase');
     }
-    return { storySlug, kind, itemId };
+    const sourceDealId =
+      typeof record.sourceDealId === 'string' ? record.sourceDealId.trim() : '';
+    return { storySlug, kind, itemId, sourceDealId };
   }
 }

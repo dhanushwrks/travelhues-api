@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
+import compression from 'compression';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module.js';
 import { StoreService } from './store/store.service.js';
@@ -26,6 +27,7 @@ function loadEnvFile() {
 async function bootstrap() {
   loadEnvFile();
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(compression());
   app.use(json({ limit: '12mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
   const store = app.get(StoreService);

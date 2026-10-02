@@ -41,6 +41,7 @@ export class AuthService {
         bio: '',
         dateOfBirth: '',
         country: '',
+        homeAirport: '',
         hobbies: [],
         countriesTraveled: [],
         socials: [],

@@ -1,0 +1,32 @@
+---
+description: Consult the LLM Wiki before exploring; update wiki after substantive changes
+alwaysApply: true
+---
+
+# LLM Wiki (project dictionary)
+
+TravelHues repos use `wiki/` as the compiled dictionary ([schema](wiki/SCHEMA.md), [index](wiki/index.md)). Follow `wiki/SCHEMA.md` and the **llm-wiki** skill (`.cursor/skills/llm-wiki/SKILL.md`).
+
+## Before exploring or implementing
+
+When understanding behavior, tracing flows, or planning non-trivial work:
+
+1. Read `wiki/index.md`, then open the listed pages for the topic (concepts, modules, sources, overview).
+2. If the task spans app, API, or admin, read `wiki/ecosystem.md` and check the sibling repo wiki when that repo owns the behavior.
+3. Prefer wiki + cited `src/` over re-deriving domain context from scratch.
+4. If wiki is missing or contradicts code, note the gap; fix wiki after you confirm the truth in code.
+
+Do not modify files under `raw/` except when adding new immutable sources the user provided.
+
+## After changes
+
+When you finish **substantive** edits (features, API routes, env/contracts, architecture, non-obvious behavior, or new `raw/` / `seed/` material):
+
+1. Update affected `wiki/` pages (concepts, modules, overview, `wiki/sources/` as needed).
+2. Update `wiki/index.md` for new or renamed pages.
+3. Append `wiki/log.md`: `## [YYYY-MM-DD] update | <short title>` (use `ingest` when processing raw sources).
+4. API or schema changes: update **travelhues-api** wiki first, then align app/admin wiki cross-links.
+
+Skip wiki updates only for trivial edits (formatting, comments, renames with no behavior change) unless the user asks to document them.
+
+Include wiki updates in the same task as the code change; do not leave dictionary drift for a follow-up unless the user defers it.

@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { usernamePattern } from '../auth/auth.user.js';
 import { isCountryCode } from './countries.js';
+import { parseHomeAirport } from '../flight-deals/flight-deals.parse.js';
 import {
   socialPlatforms,
   type ProfileDraft,
@@ -31,6 +32,7 @@ export function parseProfilePatch(body: unknown) {
   const record = asRecord(body);
   const patch: Partial<ProfileDraft> & {
     hidden?: boolean;
+    homeAirport?: string;
     avatarDataUrl?: string;
     coverDataUrl?: string;
     introVideoUrl?: string;
@@ -42,6 +44,10 @@ export function parseProfilePatch(body: unknown) {
   if ('bio' in record) patch.bio = asBio(record.bio);
   if ('dateOfBirth' in record) patch.dateOfBirth = asDateOfBirth(record.dateOfBirth);
   if ('country' in record) patch.country = asCountry(record.country);
+  if ('homeAirport' in record) {
+    patch.homeAirport =
+      record.homeAirport === '' ? '' : parseHomeAirport(record.homeAirport);
+  }
   if ('hobbies' in record) patch.hobbies = asHobbies(record.hobbies);
   if ('countriesTraveled' in record) {
     patch.countriesTraveled = asCountries(record.countriesTraveled);

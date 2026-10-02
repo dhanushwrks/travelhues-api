@@ -7,5 +7,6 @@ export type ContentPurchase = {
   kind: PurchaseKind;
   itemId: string;
   priceInr: number;
+  sourceDealId?: string;
   createdAt: string;
 };

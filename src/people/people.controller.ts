@@ -21,6 +21,7 @@ import { AuthService } from '../auth/auth.service.js';
 import { OptionalUserGuard, type MaybeAuthedRequest } from '../auth/optional-user.guard.js';
 import { UserGuard, type AuthedRequest } from '../auth/user.guard.js';
 import { listCountries } from './countries.js';
+import { publicJsonCacheHeader } from '../http/public-cache.js';
 import { PeopleService } from './people.service.js';
 
 @Controller()
@@ -31,6 +32,7 @@ export class PeopleController {
   ) {}
 
   @Get('countries')
+  @Header('Cache-Control', publicJsonCacheHeader)
   countries() {
     return listCountries();
   }

@@ -116,6 +116,8 @@ export type Story = {
   title: string;
   summary: string;
   coverUrl: string;
+  highlightVideoUrl?: string;
+  highlightStreamUrl?: string;
   ownerId?: string;
   destination: Destination;
   creator: Creator;

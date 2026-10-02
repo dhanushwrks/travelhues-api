@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Param,
   Post,
@@ -13,6 +14,7 @@ import {
 import { TccGuard } from '../auth/tcc.guard.js';
 import { OptionalUserGuard, type MaybeAuthedRequest } from '../auth/optional-user.guard.js';
 import { UserGuard, type AuthedRequest } from '../auth/user.guard.js';
+import { publicJsonCacheHeader } from '../http/public-cache.js';
 import { GlimpsesService } from './glimpses.service.js';
 
 @Controller('glimpses')
@@ -21,8 +23,14 @@ export class GlimpsesController {
 
   @Get()
   @UseGuards(OptionalUserGuard)
-  list(@Req() request: MaybeAuthedRequest, @Query('country') country?: string) {
-    return this.glimpses.list(request.user?.id ?? '', country);
+  @Header('Cache-Control', 'private, max-age=60')
+  list(
+    @Req() request: MaybeAuthedRequest,
+    @Query('country') country?: string,
+    @Query('storySlug') storySlug?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.glimpses.list(request.user?.id ?? '', { country, storySlug, limit });
   }
 
   @Post()

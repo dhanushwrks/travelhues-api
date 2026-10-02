@@ -245,6 +245,7 @@ export class PeopleService {
       if (patch.bio !== undefined) profile.bio = patch.bio;
       if (patch.dateOfBirth !== undefined) profile.dateOfBirth = patch.dateOfBirth;
       if (patch.country !== undefined) profile.country = patch.country;
+      if (patch.homeAirport !== undefined) profile.homeAirport = patch.homeAirport;
       if (patch.hobbies !== undefined) profile.hobbies = patch.hobbies;
       if (patch.countriesTraveled !== undefined) {
         profile.countriesTraveled = patch.countriesTraveled;
@@ -383,6 +384,7 @@ export class PeopleService {
         bio: story.creator.bio,
         dateOfBirth: '',
         country: '',
+        homeAirport: '',
         hobbies: [],
         countriesTraveled: [],
         socials: [],
@@ -431,6 +433,7 @@ export class PeopleService {
       headline: normalized.headline,
       bio: normalized.bio,
       country: normalized.country,
+      homeAirport: normalized.homeAirport ?? '',
       countriesTraveled: normalized.countriesTraveled,
       hobbies: normalized.hobbies,
       socials: normalized.socials,
@@ -534,6 +537,7 @@ function blankProfile(user: AuthUser): Profile {
     bio: '',
     dateOfBirth: '',
     country: '',
+    homeAirport: '',
     hobbies: [],
     countriesTraveled: [],
     socials: [],
@@ -565,6 +569,7 @@ function profileFromDraft(
     bio: draft.bio,
     dateOfBirth: draft.dateOfBirth,
     country: draft.country,
+    homeAirport: '',
     hobbies: draft.hobbies,
     countriesTraveled: draft.countriesTraveled,
     socials: draft.socials,
@@ -592,6 +597,9 @@ function normalizeProfileInPlace(profile: Profile) {
   if (typeof profile.hasPassword !== 'boolean') {
     // Resolved on /me via auth providers; false until proven.
     profile.hasPassword = false;
+  }
+  if (typeof profile.homeAirport !== 'string') {
+    profile.homeAirport = '';
   }
   if (profile.usernameChangedAt === undefined) {
     if (profile.role === 'tcc') {

@@ -103,6 +103,45 @@ describe('AppController (e2e)', () => {
       });
   });
 
+  it('lists flight deals by origin after admin create', async () => {
+    const stories = await request(app.getHttpServer())
+      .get('/admin/stories')
+      .set('Authorization', 'Bearer test-token')
+      .expect(200);
+    const story = stories.body[0];
+    if (!story?.slug || !story?.creator?.username) return;
+
+    const created = await request(app.getHttpServer())
+      .post('/admin/flight-deals')
+      .set('Authorization', 'Bearer test-token')
+      .send({
+        originIata: 'BLR',
+        destinationIata: 'BKK',
+        destinationCity: story.destination?.name ?? 'Bangkok',
+        destinationCountry: story.destination?.country ?? 'TH',
+        departureDate: '2026-11-01',
+        priceInr: 12999,
+        affiliateUrl: 'https://example.com/book',
+        storyCreatorUsername: story.creator.username,
+        storySlug: story.slug,
+        status: 'published',
+        validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get('/flight-deals?origin=BLR')
+      .expect(200)
+      .expect((response) => {
+        if (!Array.isArray(response.body) || response.body.length < 1) {
+          throw new Error('expected at least one deal');
+        }
+        if (response.body[0].id !== created.body.id) {
+          throw new Error('expected created deal in list');
+        }
+      });
+  });
+
   afterEach(async () => {
     await app.close();
   });

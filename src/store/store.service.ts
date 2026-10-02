@@ -6,6 +6,7 @@ import type { Block, CommuteLeg, Itinerary, Spot, Story } from '../content/conte
 import type { Glimpse, GlimpseComment, GlimpseLike } from '../glimpses/glimpses.types.js';
 import type { ContentMark } from '../marks/marks.types.js';
 import type { ContentPurchase } from '../purchases/purchases.types.js';
+import type { FlightDeal, FlightDealEvent } from '../flight-deals/flight-deals.types.js';
 import type { CreatorInvite, Profile, WaitlistRequest } from '../people/people.types.js';
 import type { Settings } from './store.types.js';
 import { seedSpotCatalog, type SpotCatalogItem } from '../content/spot-catalog.js';
@@ -21,6 +22,8 @@ type StoreFile = {
   glimpseComments: GlimpseComment[];
   contentMarks: ContentMark[];
   contentPurchases: ContentPurchase[];
+  flightDeals: FlightDeal[];
+  flightDealEvents: FlightDealEvent[];
 };
 
 export const brandLinkDefaults = {
@@ -106,6 +109,62 @@ export class StoreService implements OnModuleInit {
     return structuredClone(this.data.contentPurchases);
   }
 
+  getFlightDeals(): FlightDeal[] {
+    return structuredClone(this.data.flightDeals);
+  }
+
+  getFlightDealEvents(): FlightDealEvent[] {
+    return structuredClone(this.data.flightDealEvents);
+  }
+
+  async upsertFlightDeal(deal: FlightDeal): Promise<FlightDeal> {
+    await this.ready;
+    const run = this.queue.then(async () => {
+      const index = this.data.flightDeals.findIndex((item) => item.id === deal.id);
+      if (index >= 0) this.data.flightDeals[index] = deal;
+      else this.data.flightDeals.push(deal);
+      if (this.supabase) {
+        const result = await this.supabase.from('flight_deals').upsert(mapDealRow(deal));
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+      if (!this.usesDatabase()) await this.persistFile();
+      return deal;
+    });
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  async recordFlightDealEvent(event: FlightDealEvent): Promise<void> {
+    await this.ready;
+    const run = this.queue.then(async () => {
+      this.data.flightDealEvents.push(event);
+      if (this.supabase) {
+        const result = await this.supabase.from('flight_deal_events').insert({
+          id: event.id,
+          deal_id: event.dealId,
+          profile_id: event.profileId || null,
+          event_type: event.eventType,
+          metadata: event.metadata,
+          created_at: event.createdAt,
+        });
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+      if (!this.usesDatabase()) await this.persistFile();
+    });
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    await run;
+  }
+
   async recordPurchase(purchase: ContentPurchase): Promise<ContentPurchase> {
     await this.ready;
     const run = this.queue.then(async () => {
@@ -126,6 +185,7 @@ export class StoreService implements OnModuleInit {
             kind: purchase.kind,
             item_id: purchase.itemId,
             price_inr: purchase.priceInr,
+            source_deal_id: purchase.sourceDealId ?? null,
             created_at: purchase.createdAt,
           },
           { onConflict: 'buyer_id,story_slug,kind,item_id' },
@@ -214,6 +274,8 @@ export class StoreService implements OnModuleInit {
         glimpseComments: parsed.glimpseComments ?? [],
         contentMarks: parsed.contentMarks ?? [],
         contentPurchases: parsed.contentPurchases ?? [],
+        flightDeals: parsed.flightDeals ?? [],
+        flightDealEvents: parsed.flightDealEvents ?? [],
       };
     } catch (error) {
       const code =
@@ -367,7 +429,8 @@ export class StoreService implements OnModuleInit {
     if ((profiles.data ?? []).length > 0) {
       this.data.profiles = (profiles.data ?? []).map((row) => mapProfile(row as ProfileRow));
     }
-    const [waitlist, invites, glimpses, likes, comments, marks, purchases] = await Promise.all([
+    const [waitlist, invites, glimpses, likes, comments, marks, purchases, flightDeals, flightDealEvents] =
+      await Promise.all([
       this.supabase.from('waitlist').select('*'),
       this.supabase.from('creator_invites').select('*'),
       this.supabase.from('glimpses').select('*'),
@@ -375,6 +438,8 @@ export class StoreService implements OnModuleInit {
       this.supabase.from('glimpse_comments').select('*'),
       this.supabase.from('content_marks').select('*'),
       this.supabase.from('content_purchases').select('*'),
+      this.supabase.from('flight_deals').select('*'),
+      this.supabase.from('flight_deal_events').select('*'),
     ]);
     for (const result of [waitlist, invites, glimpses, likes, comments, marks]) {
       if (result.error) {
@@ -384,6 +449,14 @@ export class StoreService implements OnModuleInit {
     }
     if (purchases.error && !isMissingSchema(purchases.error.message)) {
       throw new Error(purchases.error.message);
+    }
+    if (!flightDeals.error && (flightDeals.data ?? []).length > 0) {
+      this.data.flightDeals = (flightDeals.data ?? []).map((row) => mapDeal(row as DealRow));
+    }
+    if (!flightDealEvents.error && (flightDealEvents.data ?? []).length > 0) {
+      this.data.flightDealEvents = (flightDealEvents.data ?? []).map((row) =>
+        mapDealEvent(row as DealEventRow),
+      );
     }
     if ((waitlist.data ?? []).length > 0) {
       this.data.waitlist = (waitlist.data ?? []).map((row) => mapWaitlist(row as WaitlistRow));
@@ -471,6 +544,20 @@ export class StoreService implements OnModuleInit {
     await this.persistItineraryReservations();
     await this.persistItineraryBlockCommutes();
     await this.persistPurchaseFields();
+    await this.persistHomeAirports();
+  }
+
+  private async persistHomeAirports() {
+    if (!this.supabase) return;
+    for (const profile of this.data.profiles) {
+      const result = await this.supabase
+        .from('profiles')
+        .update({ home_airport: profile.homeAirport ?? '' })
+        .eq('id', profile.id);
+      if (result.error && !isMissingSchema(result.error.message)) {
+        throw new Error(result.error.message);
+      }
+    }
   }
 
   private async persistPurchaseFields() {
@@ -730,6 +817,8 @@ function blankStore(settings: Settings, stories: Story[]): StoreFile {
     glimpseComments: [],
     contentMarks: [],
     contentPurchases: [],
+    flightDeals: [],
+    flightDealEvents: [],
   };
 }
 
@@ -948,6 +1037,7 @@ type ProfileRow = {
   bio: string | null;
   date_of_birth: string | null;
   country: string | null;
+  home_airport?: string | null;
   hobbies: string[] | null;
   countries_traveled: string[] | null;
   socials: Profile['socials'] | null;
@@ -1028,6 +1118,44 @@ type PurchaseRow = {
   kind: ContentPurchase['kind'];
   item_id: string;
   price_inr: number;
+  source_deal_id?: string | null;
+  created_at: string;
+};
+
+type DealRow = {
+  id: string;
+  origin_iata: string;
+  destination_iata: string;
+  destination_city: string;
+  destination_country: string;
+  departure_date: string;
+  return_date: string | null;
+  price_inr: number;
+  currency: string;
+  affiliate_url: string;
+  affiliate_partner: string | null;
+  headline: string | null;
+  subtitle: string | null;
+  badge: string | null;
+  story_creator_username: string | null;
+  story_slug: string | null;
+  featured_itinerary_slug: string | null;
+  featured_spot_ids: string[] | null;
+  status: FlightDeal['status'];
+  valid_from: string;
+  valid_until: string;
+  priority: number | null;
+  external_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DealEventRow = {
+  id: string;
+  deal_id: string;
+  profile_id: string | null;
+  event_type: FlightDealEvent['eventType'];
+  metadata: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -1042,6 +1170,7 @@ function mapProfile(row: ProfileRow): Profile {
     bio: row.bio ?? '',
     dateOfBirth: row.date_of_birth ?? '',
     country: row.country ?? '',
+    homeAirport: row.home_airport ?? '',
     hobbies: row.hobbies ?? [],
     countriesTraveled: row.countries_traveled ?? [],
     socials: row.socials ?? [],
@@ -1147,7 +1276,79 @@ function mapPurchase(row: PurchaseRow): ContentPurchase {
     kind: row.kind,
     itemId: row.item_id,
     priceInr: row.price_inr,
+    sourceDealId: row.source_deal_id ?? undefined,
     createdAt: row.created_at,
+  };
+}
+
+function mapDeal(row: DealRow): FlightDeal {
+  return {
+    id: row.id,
+    originIata: row.origin_iata,
+    destinationIata: row.destination_iata,
+    destinationCity: row.destination_city,
+    destinationCountry: row.destination_country,
+    departureDate: row.departure_date,
+    returnDate: row.return_date ?? '',
+    priceInr: row.price_inr,
+    currency: row.currency ?? 'INR',
+    affiliateUrl: row.affiliate_url,
+    affiliatePartner: row.affiliate_partner ?? '',
+    headline: row.headline ?? '',
+    subtitle: row.subtitle ?? '',
+    badge: row.badge ?? '',
+    storyCreatorUsername: row.story_creator_username ?? '',
+    storySlug: row.story_slug ?? '',
+    featuredItinerarySlug: row.featured_itinerary_slug ?? '',
+    featuredSpotIds: Array.isArray(row.featured_spot_ids) ? row.featured_spot_ids : [],
+    status: row.status,
+    validFrom: row.valid_from,
+    validUntil: row.valid_until,
+    priority: row.priority ?? 0,
+    externalId: row.external_id ?? '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapDealEvent(row: DealEventRow): FlightDealEvent {
+  return {
+    id: row.id,
+    dealId: row.deal_id,
+    profileId: row.profile_id ?? '',
+    eventType: row.event_type,
+    metadata: row.metadata ?? {},
+    createdAt: row.created_at,
+  };
+}
+
+function mapDealRow(deal: FlightDeal) {
+  return {
+    id: deal.id,
+    origin_iata: deal.originIata,
+    destination_iata: deal.destinationIata,
+    destination_city: deal.destinationCity,
+    destination_country: deal.destinationCountry,
+    departure_date: deal.departureDate,
+    return_date: deal.returnDate || null,
+    price_inr: deal.priceInr,
+    currency: deal.currency,
+    affiliate_url: deal.affiliateUrl,
+    affiliate_partner: deal.affiliatePartner,
+    headline: deal.headline,
+    subtitle: deal.subtitle,
+    badge: deal.badge,
+    story_creator_username: deal.storyCreatorUsername,
+    story_slug: deal.storySlug,
+    featured_itinerary_slug: deal.featuredItinerarySlug,
+    featured_spot_ids: deal.featuredSpotIds,
+    status: deal.status,
+    valid_from: deal.validFrom,
+    valid_until: deal.validUntil,
+    priority: deal.priority,
+    external_id: deal.externalId || null,
+    created_at: deal.createdAt,
+    updated_at: deal.updatedAt,
   };
 }
 

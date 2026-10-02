@@ -9,22 +9,30 @@ import type { AuthUser } from '../auth/auth.user.js';
 import { isCountryCode } from '../people/countries.js';
 import { quietAccounts } from '../content/public-story.js';
 import { StoreService } from '../store/store.service.js';
+import { glimpsePlaybackFields } from './glimpse-media.js';
 import type { Glimpse, GlimpseComment, GlimpseLink } from './glimpses.types.js';
 
 @Injectable()
 export class GlimpsesService {
   constructor(private readonly store: StoreService) {}
 
-  list(viewerId: string, country?: string) {
+  list(
+    viewerId: string,
+    query: { country?: string; storySlug?: string; limit?: string } = {},
+  ) {
     if (!this.store.getSettings().api.contentPublished) return [];
-    const code = country ? country.toUpperCase() : '';
+    const code = query.country ? query.country.toUpperCase() : '';
+    const storySlug = (query.storySlug ?? '').trim();
+    const cap = Math.min(50, Math.max(1, Number.parseInt(query.limit ?? '0', 10) || 0));
     const quiet = quietAccounts(this.store.getProfiles());
-    return this.store
+    let rows = this.store
       .getGlimpses()
       .filter((glimpse) => !glimpse.deletedAt)
       .filter((glimpse) => !quiet.ids.has(glimpse.creatorId) && !quiet.names.has(glimpse.username))
       .filter((glimpse) => !code || glimpse.country === code)
-      .map((glimpse) => this.present(glimpse, viewerId));
+      .filter((glimpse) => !storySlug || glimpse.link?.storySlug === storySlug);
+    if (cap > 0) rows = rows.slice(0, cap);
+    return rows.map((glimpse) => this.present(glimpse, viewerId));
   }
 
   async create(user: AuthUser, body: unknown) {
@@ -111,8 +119,11 @@ export class GlimpsesService {
     const comments = this.store
       .getGlimpseComments()
       .filter((comment) => comment.glimpseId === glimpse.id);
+    const playback = glimpsePlaybackFields(glimpse.videoUrl);
     return {
       ...glimpse,
+      videoUrl: playback.videoUrl || glimpse.videoUrl,
+      streamUrl: playback.streamUrl,
       avatarUrl: this.avatarFor(glimpse),
       likes: likes.length,
       liked: likes.some((like) => like.userId === viewerId),
