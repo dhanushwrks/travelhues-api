@@ -16,7 +16,13 @@ const ACCOUNTS = [
   { email: 'sagar.thapa@seed.travelhues.app', password: 'HueSeed-sagar-85' },
   { email: 'dewi.putri@seed.travelhues.app', password: 'HueSeed-dewi-96' },
   { email: 'amina.nur@seed.travelhues.app', password: 'HueSeed-amina-17' },
-];
+].filter((account) => {
+  const only = (process.env.ONLY_EMAILS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return only.length === 0 || only.includes(account.email);
+});
 
 const DAY_BRIEFS = [
   'Ease in. Keep the first afternoon light so the evening still has room.',
@@ -36,20 +42,66 @@ const NOTE_BANK = [
 
 async function main() {
   let updated = 0;
+  let skipped = 0;
   for (const account of ACCOUNTS) {
-    const token = await login(account);
-    const stories = await getJson('/me/stories', token);
+    const token = await withRetry(() => login(account), `login ${account.email}`);
+    const stories = await withRetry(() => getJson('/me/stories', token), `stories ${account.email}`);
     for (const story of stories) {
       const spots = Object.fromEntries((story.spots || []).map((spot) => [spot.id, spot]));
       for (const plan of story.itineraries || []) {
+        if (alreadyRich(plan)) {
+          skipped += 1;
+          console.log(`skip ${story.slug}/${plan.slug}`);
+          continue;
+        }
         const enriched = enrichPlan(plan, spots, story);
-        await putJson(`/stories/${story.slug}/itineraries/${plan.slug}`, token, enriched);
+        await withRetry(
+          () => putJson(`/stories/${story.slug}/itineraries/${plan.slug}`, token, enriched),
+          `PUT ${story.slug}/${plan.slug}`,
+        );
         updated += 1;
         console.log(`updated ${story.slug}/${plan.slug}`);
+        await sleep(1500);
       }
     }
   }
-  console.log(`done: ${updated} itineraries`);
+  console.log(`done: ${updated} itineraries, skipped ${skipped}`);
+}
+
+function alreadyRich(plan) {
+  const days = plan.days || [];
+  const stopCount = days.reduce(
+    (count, day) => count + (day.blocks || []).filter((block) => block.kind === 'spot').length,
+    0,
+  );
+  const commuteCount = days.reduce(
+    (count, day) =>
+      count + (day.blocks || []).filter((block) => block.kind === 'spot' && block.commute).length,
+    0,
+  );
+  const reservations = Array.isArray(plan.reservations) ? plan.reservations.length : 0;
+  const briefs = days.filter((day) => (day.brief || '').trim()).length;
+  const expectedCommutes = Math.max(0, stopCount - days.length);
+  return reservations >= 2 && briefs >= days.length && commuteCount >= expectedCommutes;
+}
+
+async function withRetry(fn, label, attempts = 5) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const wait = attempt * 2500;
+      console.warn(`${label} failed (${attempt}/${attempts}): ${error.message || error}`);
+      await sleep(wait);
+    }
+  }
+  throw lastError;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function enrichPlan(plan, spots, story) {
