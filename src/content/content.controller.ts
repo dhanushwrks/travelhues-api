@@ -46,6 +46,18 @@ export class ContentController {
     return this.admin.createSpot(slug, body);
   }
 
+  @Put('stories/:slug/spots/:spotId')
+  @UseGuards(UserGuard)
+  updateSpot(
+    @Req() request: AuthedRequest,
+    @Param('slug') slug: string,
+    @Param('spotId') spotId: string,
+    @Body() body: unknown,
+  ) {
+    this.admin.requireOwned(request.user, slug);
+    return this.admin.updateSpot(slug, spotId, body);
+  }
+
   @Post('stories/:slug/blogs')
   @UseGuards(UserGuard, TccGuard)
   createBlog(
