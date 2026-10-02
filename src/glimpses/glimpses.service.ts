@@ -28,12 +28,24 @@ export class GlimpsesService {
       ? Math.min(50, parsed)
       : 30;
     const quiet = quietAccounts(this.store.getProfiles());
+    const seenIds = new Set<string>();
+    const seenVideos = new Set<string>();
     let rows = this.store
       .getGlimpses()
       .filter((glimpse) => !glimpse.deletedAt)
       .filter((glimpse) => !quiet.ids.has(glimpse.creatorId) && !quiet.names.has(glimpse.username))
       .filter((glimpse) => !code || glimpse.country === code)
-      .filter((glimpse) => !storySlug || glimpse.link?.storySlug === storySlug);
+      .filter((glimpse) => !storySlug || glimpse.link?.storySlug === storySlug)
+      .filter((glimpse) => {
+        if (seenIds.has(glimpse.id)) return false;
+        seenIds.add(glimpse.id);
+        const playback = glimpse.videoUrl.trim();
+        if (playback) {
+          if (seenVideos.has(playback)) return false;
+          seenVideos.add(playback);
+        }
+        return true;
+      });
     if (cap > 0) rows = rows.slice(0, cap);
     return rows.map((glimpse) => this.present(glimpse, viewerId));
   }

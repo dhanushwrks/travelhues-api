@@ -283,10 +283,25 @@ export class StoreService implements OnModuleInit {
     const desired = seedGlimpses(this.data.stories, this.data.profiles);
     if (!desired.length) return;
     const known = new Set(this.data.glimpses.map((item) => item.id));
-    const toAdd = desired.filter((item) => !known.has(item.id));
-    if (!toAdd.length) return;
-    this.data.glimpses.unshift(...toAdd);
-    await this.persistSeededGlimpses(toAdd);
+    const toAdd: Glimpse[] = [];
+    const toRefresh: Glimpse[] = [];
+    for (const seed of desired) {
+      const existing = this.data.glimpses.find((item) => item.id === seed.id);
+      if (!existing) {
+        toAdd.push(seed);
+        continue;
+      }
+      existing.caption = seed.caption;
+      existing.videoUrl = seed.videoUrl;
+      existing.posterUrl = seed.posterUrl;
+      existing.link = seed.link;
+      existing.country = seed.country;
+      toRefresh.push(existing);
+    }
+    if (toAdd.length) this.data.glimpses.unshift(...toAdd);
+    const persist = [...toAdd, ...toRefresh];
+    if (!persist.length) return;
+    await this.persistSeededGlimpses(persist);
   }
 
   private async persistSeededFlightDeals(deals: FlightDeal[]) {
