@@ -11,6 +11,7 @@ import type { CreatorInvite, Profile, WaitlistRequest } from '../people/people.t
 import type { Settings } from './store.types.js';
 import { seedSpotCatalog, type SpotCatalogItem } from '../content/spot-catalog.js';
 import { seedFlightDeals } from './seed-flight-deals.js';
+import { seedGlimpses } from './seed-glimpses.js';
 
 type StoreFile = {
   settings: Settings;
@@ -261,13 +262,53 @@ export class StoreService implements OnModuleInit {
   }
 
   private async ensureDefaultFlightDeals() {
-    if (this.data.flightDeals.length > 0) return;
-    const seeded = seedFlightDeals(this.data.stories);
-    if (!seeded.length) return;
-    this.data.flightDeals = seeded;
+    const desired = seedFlightDeals(this.data.stories);
+    if (!desired.length) return;
+    const known = new Set(
+      this.data.flightDeals.map((item) => item.externalId || `${item.storySlug}-${item.originIata}`),
+    );
+    const added: FlightDeal[] = [];
+    for (const deal of desired) {
+      const key = deal.externalId || `${deal.storySlug}-${deal.originIata}`;
+      if (known.has(key)) continue;
+      this.data.flightDeals.push(deal);
+      known.add(key);
+      added.push(deal);
+    }
+    if (!added.length) return;
+    await this.persistSeededFlightDeals(added);
+  }
+
+  private async ensureDefaultGlimpses() {
+    const desired = seedGlimpses(this.data.stories, this.data.profiles);
+    if (!desired.length) return;
+    const known = new Set(this.data.glimpses.map((item) => item.id));
+    const toAdd = desired.filter((item) => !known.has(item.id));
+    if (!toAdd.length) return;
+    this.data.glimpses.unshift(...toAdd);
+    await this.persistSeededGlimpses(toAdd);
+  }
+
+  private async persistSeededFlightDeals(deals: FlightDeal[]) {
     if (this.supabase) {
-      for (const deal of seeded) {
+      for (const deal of deals) {
         const result = await this.supabase.from('flight_deals').upsert(mapDealRow(deal));
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+      return;
+    }
+    if (!this.usesDatabase()) {
+      await this.persistFile();
+    }
+  }
+
+  private async persistSeededGlimpses(glimpses: Glimpse[]) {
+    if (this.supabase) {
+      for (const glimpse of glimpses) {
+        const row = mapGlimpseRow(glimpse);
+        const result = await this.supabase.from('glimpses').upsert(row);
         if (result.error && !isMissingSchema(result.error.message)) {
           throw new Error(result.error.message);
         }
@@ -298,6 +339,7 @@ export class StoreService implements OnModuleInit {
       await this.loadFile();
     }
     await this.ensureDefaultFlightDeals();
+    await this.ensureDefaultGlimpses();
   }
 
   private async loadFile() {
@@ -586,6 +628,7 @@ export class StoreService implements OnModuleInit {
 
   private async persistDatabase() {
     if (!this.supabase) throw new Error('Supabase is not configured');
+    await this.syncGlimpsesBeforeCommunitySave();
     const result = await this.supabase.rpc('save_content', { payload: this.data });
     if (result.error) throw new Error(result.error.message);
     await this.persistBrandLinks();
@@ -595,6 +638,13 @@ export class StoreService implements OnModuleInit {
     await this.persistItineraryBlockCommutes();
     await this.persistPurchaseFields();
     await this.persistHomeAirports();
+  }
+
+  private async syncGlimpsesBeforeCommunitySave() {
+    if (!this.supabase || this.data.glimpses.length > 0) return;
+    const loaded = await this.supabase.from('glimpses').select('*');
+    if (loaded.error || !(loaded.data ?? []).length) return;
+    this.data.glimpses = (loaded.data ?? []).map((row) => mapGlimpse(row as GlimpseRow));
   }
 
   private async persistHomeAirports() {
@@ -1370,6 +1420,27 @@ function mapDealEvent(row: DealEventRow): FlightDealEvent {
     eventType: row.event_type,
     metadata: row.metadata ?? {},
     createdAt: row.created_at,
+  };
+}
+
+function mapGlimpseRow(glimpse: Glimpse) {
+  return {
+    id: glimpse.id,
+    creator_id: glimpse.creatorId,
+    username: glimpse.username,
+    display_name: glimpse.displayName,
+    avatar_url: glimpse.avatarUrl,
+    caption: glimpse.caption,
+    video_url: glimpse.videoUrl,
+    poster_url: glimpse.posterUrl,
+    country: glimpse.country,
+    created_at: glimpse.createdAt,
+    link_kind: glimpse.link?.kind ?? null,
+    link_story_slug: glimpse.link?.storySlug ?? null,
+    link_itinerary_slug: glimpse.link?.itinerarySlug ?? null,
+    link_spot_id: glimpse.link?.spotId ?? null,
+    link_label: glimpse.link?.label ?? null,
+    deleted_at: glimpse.deletedAt ?? null,
   };
 }
 
