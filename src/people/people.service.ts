@@ -277,6 +277,9 @@ export class PeopleService {
       next = structuredClone(profile);
     });
     if (!next) throw new NotFoundException('Profile was not found');
+    if (patch.homeAirport !== undefined) {
+      await this.store.patchProfileHomeAirport(user.id, patch.homeAirport);
+    }
     await this.auth.syncProfile(user.id, next.username, next.displayName);
     return this.present(next, true, user.id);
   }

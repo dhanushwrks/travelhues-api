@@ -10,6 +10,7 @@ import type { FlightDeal, FlightDealEvent } from '../flight-deals/flight-deals.t
 import type { CreatorInvite, Profile, WaitlistRequest } from '../people/people.types.js';
 import type { Settings } from './store.types.js';
 import { seedSpotCatalog, type SpotCatalogItem } from '../content/spot-catalog.js';
+import { seedFlightDeals } from './seed-flight-deals.js';
 
 type StoreFile = {
   settings: Settings;
@@ -237,6 +238,47 @@ export class StoreService implements OnModuleInit {
     await run;
   }
 
+  async patchProfileHomeAirport(profileId: string, homeAirport: string): Promise<void> {
+    await this.ready;
+    const normalized = homeAirport.trim().toUpperCase();
+    const run = this.queue.then(async () => {
+      const profile = this.data.profiles.find((item) => item.id === profileId);
+      if (profile) profile.homeAirport = normalized;
+      if (!this.supabase) return;
+      const result = await this.supabase
+        .from('profiles')
+        .update({ home_airport: normalized || null })
+        .eq('id', profileId);
+      if (result.error && !isMissingSchema(result.error.message)) {
+        throw new Error(result.error.message);
+      }
+    });
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    await run;
+  }
+
+  private async ensureDefaultFlightDeals() {
+    if (this.data.flightDeals.length > 0) return;
+    const seeded = seedFlightDeals(this.data.stories);
+    if (!seeded.length) return;
+    this.data.flightDeals = seeded;
+    if (this.supabase) {
+      for (const deal of seeded) {
+        const result = await this.supabase.from('flight_deals').upsert(mapDealRow(deal));
+        if (result.error && !isMissingSchema(result.error.message)) {
+          throw new Error(result.error.message);
+        }
+      }
+      return;
+    }
+    if (!this.usesDatabase()) {
+      await this.persistFile();
+    }
+  }
+
   private storePath() {
     return process.env.STORE_PATH ?? 'data/store.json';
   }
@@ -252,9 +294,10 @@ export class StoreService implements OnModuleInit {
       process.env.SUPABASE_SECRET_KEY
     ) {
       await this.loadDatabase();
-      return;
+    } else {
+      await this.loadFile();
     }
-    await this.loadFile();
+    await this.ensureDefaultFlightDeals();
   }
 
   private async loadFile() {
@@ -441,47 +484,52 @@ export class StoreService implements OnModuleInit {
       this.supabase.from('flight_deals').select('*'),
       this.supabase.from('flight_deal_events').select('*'),
     ]);
-    for (const result of [waitlist, invites, glimpses, likes, comments, marks]) {
-      if (result.error) {
-        if (isMissingSchema(result.error.message)) return;
-        throw new Error(result.error.message);
-      }
-    }
+    const requireTable = (result: { error: { message: string } | null }, label: string) => {
+      if (!result.error) return;
+      if (isMissingSchema(result.error.message)) return;
+      throw new Error(`${label}: ${result.error.message}`);
+    };
+    requireTable(waitlist, 'waitlist');
+    requireTable(invites, 'creator_invites');
+    requireTable(glimpses, 'glimpses');
+    requireTable(likes, 'glimpse_likes');
+    requireTable(comments, 'glimpse_comments');
+    requireTable(marks, 'content_marks');
     if (purchases.error && !isMissingSchema(purchases.error.message)) {
       throw new Error(purchases.error.message);
     }
-    if (!flightDeals.error && (flightDeals.data ?? []).length > 0) {
-      this.data.flightDeals = (flightDeals.data ?? []).map((row) => mapDeal(row as DealRow));
-    }
-    if (!flightDealEvents.error && (flightDealEvents.data ?? []).length > 0) {
-      this.data.flightDealEvents = (flightDealEvents.data ?? []).map((row) =>
-        mapDealEvent(row as DealEventRow),
-      );
-    }
-    if ((waitlist.data ?? []).length > 0) {
+    if (!waitlist.error) {
       this.data.waitlist = (waitlist.data ?? []).map((row) => mapWaitlist(row as WaitlistRow));
     }
-    if ((invites.data ?? []).length > 0) {
+    if (!invites.error) {
       this.data.invites = (invites.data ?? []).map((row) => mapInvite(row as InviteRow));
     }
-    if ((glimpses.data ?? []).length > 0) {
+    if (!glimpses.error) {
       this.data.glimpses = (glimpses.data ?? []).map((row) => mapGlimpse(row as GlimpseRow));
     }
-    if ((likes.data ?? []).length > 0) {
+    if (!likes.error) {
       this.data.glimpseLikes = (likes.data ?? []).map((row) => ({
         glimpseId: (row as LikeRow).glimpse_id,
         userId: (row as LikeRow).user_id,
       }));
     }
-    if ((comments.data ?? []).length > 0) {
+    if (!comments.error) {
       this.data.glimpseComments = (comments.data ?? []).map((row) => mapComment(row as CommentRow));
     }
-    if ((marks.data ?? []).length > 0) {
+    if (!marks.error) {
       this.data.contentMarks = (marks.data ?? []).map((row) => mapMark(row as MarkRow));
     }
-    if (!purchases.error && (purchases.data ?? []).length > 0) {
+    if (!purchases.error) {
       this.data.contentPurchases = (purchases.data ?? []).map((row) =>
         mapPurchase(row as PurchaseRow),
+      );
+    }
+    if (!flightDeals.error) {
+      this.data.flightDeals = (flightDeals.data ?? []).map((row) => mapDeal(row as DealRow));
+    }
+    if (!flightDealEvents.error) {
+      this.data.flightDealEvents = (flightDealEvents.data ?? []).map((row) =>
+        mapDealEvent(row as DealEventRow),
       );
     }
   }
@@ -505,7 +553,9 @@ export class StoreService implements OnModuleInit {
       const parsed = JSON.parse(raw) as Partial<
         Pick<StoreFile, 'profiles' | 'waitlist' | 'invites'>
       >;
-      this.data.profiles = parsed.profiles ?? [];
+      if (!this.databaseReady) {
+        this.data.profiles = parsed.profiles ?? [];
+      }
       this.data.waitlist = parsed.waitlist ?? [];
       this.data.invites = parsed.invites ?? [];
     } catch (error) {
@@ -550,9 +600,10 @@ export class StoreService implements OnModuleInit {
   private async persistHomeAirports() {
     if (!this.supabase) return;
     for (const profile of this.data.profiles) {
+      const code = profile.homeAirport?.trim().toUpperCase() ?? '';
       const result = await this.supabase
         .from('profiles')
-        .update({ home_airport: profile.homeAirport ?? '' })
+        .update({ home_airport: code || null })
         .eq('id', profile.id);
       if (result.error && !isMissingSchema(result.error.message)) {
         throw new Error(result.error.message);
